@@ -60,3 +60,38 @@ func TestToolRegistry(t *testing.T) {
 		}
 	})
 }
+
+func TestToolDescriptionAndParameters(t *testing.T) {
+	tools := []Tool{
+		NewReadTool(),
+		NewWriteTool(),
+		NewEditTool(),
+		NewBashTool(),
+	}
+
+	for _, tool := range tools {
+		t.Run(tool.Name()+"_description", func(t *testing.T) {
+			desc := tool.Description()
+			if desc == "" {
+				t.Errorf("tool %s has empty description", tool.Name())
+			}
+		})
+
+		t.Run(tool.Name()+"_parameters", func(t *testing.T) {
+			params := tool.Parameters()
+			if params == nil {
+				t.Errorf("tool %s has nil parameters", tool.Name())
+			}
+			if params["type"] != "object" {
+				t.Errorf("tool %s parameters should have type 'object'", tool.Name())
+			}
+			props, ok := params["properties"].(map[string]interface{})
+			if !ok {
+				t.Errorf("tool %s should have properties", tool.Name())
+			}
+			if len(props) == 0 {
+				t.Errorf("tool %s should have at least one property", tool.Name())
+			}
+		})
+	}
+}

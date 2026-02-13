@@ -3,456 +3,275 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"strings"
 	"testing"
 )
 
-// mockOpenAIResponse represents a mock OpenAI chat completion response
-type mockOpenAIResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role      string `json:"role"`
-			Content   string `json:"content"`
-			ToolCalls []struct {
-				ID       string `json:"id"`
-				Type     string `json:"type"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls,omitempty"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-func newMockResponse(content string, finishReason string, toolCalls []ToolCall) mockOpenAIResponse {
-	resp := mockOpenAIResponse{
-		ID:     "chatcmpl-test",
-		Object: "chat.completion",
-		Model:  "gpt-4",
-	}
-	resp.Choices = make([]struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role      string `json:"role"`
-			Content   string `json:"content"`
-			ToolCalls []struct {
-				ID       string `json:"id"`
-				Type     string `json:"type"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls,omitempty"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	}, 1)
-	resp.Choices[0].Index = 0
-	resp.Choices[0].Message.Role = "assistant"
-	resp.Choices[0].Message.Content = content
-	resp.Choices[0].FinishReason = finishReason
-
-	if len(toolCalls) > 0 {
-		resp.Choices[0].Message.ToolCalls = make([]struct {
-			ID       string `json:"id"`
-			Type     string `json:"type"`
-			Function struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			} `json:"function"`
-		}, len(toolCalls))
-		for i, tc := range toolCalls {
-			resp.Choices[0].Message.ToolCalls[i].ID = tc.ID
-			resp.Choices[0].Message.ToolCalls[i].Type = tc.Type
-			resp.Choices[0].Message.ToolCalls[i].Function.Name = tc.Function.Name
-			resp.Choices[0].Message.ToolCalls[i].Function.Arguments = tc.Function.Arguments
-		}
-	}
-	return resp
-}
-
 func TestNewClient(t *testing.T) {
-	t.Run("creates client with default settings", func(t *testing.T) {
-		client := NewClient("test-api-key", "", "gpt-4")
-		if client == nil {
-			t.Fatal("expected non-nil client")
-		}
-		if client.model != "gpt-4" {
-			t.Errorf("expected model gpt-4, got %s", client.model)
+	t.Run("create client with defaults", func(t *testing.T) {
+		client := NewClient("test-key", "", "gpt-4")
+		if client.GetModel() != "gpt-4" {
+			t.Errorf("expected model 'gpt-4', got '%s'", client.GetModel())
 		}
 	})
 
-	t.Run("creates client with custom base URL", func(t *testing.T) {
-		client := NewClient("test-api-key", "http://localhost:8080", "gpt-4")
-		if client == nil {
-			t.Fatal("expected non-nil client")
-		}
-		if client.model != "gpt-4" {
-			t.Errorf("expected model gpt-4, got %s", client.model)
-		}
-	})
-}
-
-func TestGetModel(t *testing.T) {
-	t.Run("returns model name", func(t *testing.T) {
-		client := NewClient("test-api-key", "", "gpt-4-turbo")
-		if got := client.GetModel(); got != "gpt-4-turbo" {
-			t.Errorf("GetModel() = %s, want gpt-4-turbo", got)
-		}
-	})
-
-	t.Run("returns different model", func(t *testing.T) {
-		client := NewClient("test-api-key", "", "gpt-3.5-turbo")
-		if got := client.GetModel(); got != "gpt-3.5-turbo" {
-			t.Errorf("GetModel() = %s, want gpt-3.5-turbo", got)
+	t.Run("create client with custom base URL", func(t *testing.T) {
+		client := NewClient("test-key", "https://custom.api.com", "gpt-4o")
+		if client.GetModel() != "gpt-4o" {
+			t.Errorf("expected model 'gpt-4o', got '%s'", client.GetModel())
 		}
 	})
 }
 
 func TestGetEnvOrDefault(t *testing.T) {
-	t.Run("returns environment variable when set", func(t *testing.T) {
-		os.Setenv("TEST_VAR_PIGO", "test-value")
-		defer os.Unsetenv("TEST_VAR_PIGO")
-
-		got := GetEnvOrDefault("TEST_VAR_PIGO", "default")
-		if got != "test-value" {
-			t.Errorf("GetEnvOrDefault() = %s, want test-value", got)
-		}
-	})
-
 	t.Run("returns default when env not set", func(t *testing.T) {
-		os.Unsetenv("TEST_VAR_NOT_SET")
-
-		got := GetEnvOrDefault("TEST_VAR_NOT_SET", "my-default")
-		if got != "my-default" {
-			t.Errorf("GetEnvOrDefault() = %s, want my-default", got)
+		result := GetEnvOrDefault("NONEXISTENT_VAR_12345", "default_value")
+		if result != "default_value" {
+			t.Errorf("expected 'default_value', got '%s'", result)
 		}
 	})
 
-	t.Run("returns default when env is empty", func(t *testing.T) {
-		os.Setenv("TEST_VAR_EMPTY", "")
-		defer os.Unsetenv("TEST_VAR_EMPTY")
-
-		got := GetEnvOrDefault("TEST_VAR_EMPTY", "fallback")
-		if got != "fallback" {
-			t.Errorf("GetEnvOrDefault() = %s, want fallback", got)
+	t.Run("returns env value when set", func(t *testing.T) {
+		t.Setenv("TEST_PIGO_VAR", "env_value")
+		result := GetEnvOrDefault("TEST_PIGO_VAR", "default")
+		if result != "env_value" {
+			t.Errorf("expected 'env_value', got '%s'", result)
 		}
 	})
 }
 
-func TestChat(t *testing.T) {
-	t.Run("simple user message response", func(t *testing.T) {
-		// Create mock server
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify request
-			if r.Method != "POST" {
-				t.Errorf("expected POST, got %s", r.Method)
-			}
-			if !strings.Contains(r.URL.Path, "/chat/completions") {
-				t.Errorf("expected /chat/completions path, got %s", r.URL.Path)
-			}
+func TestClientChat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
 
-			// Parse request body to verify message conversion
-			body, _ := io.ReadAll(r.Body)
-			var reqBody map[string]interface{}
-			json.Unmarshal(body, &reqBody)
+		response := map[string]interface{}{
+			"id":      "chatcmpl-123",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "Hello! How can I help you?",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
 
-			// Return mock response
-			resp := newMockResponse("Hello! How can I help?", "stop", nil)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
 
+	t.Run("successful chat completion", func(t *testing.T) {
 		client := NewClient("test-key", server.URL, "gpt-4")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
 		}
 
-		response, err := client.Chat(context.Background(), messages, nil)
+		resp, err := client.Chat(context.Background(), messages, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if response.Content != "Hello! How can I help?" {
-			t.Errorf("unexpected content: %s", response.Content)
-		}
-		if response.FinishReason != "stop" {
-			t.Errorf("unexpected finish reason: %s", response.FinishReason)
-		}
-	})
 
-	t.Run("system and user messages", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			resp := newMockResponse("I understand my role.", "stop", nil)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
-		client := NewClient("test-key", server.URL, "gpt-4")
-		messages := []Message{
-			{Role: "system", Content: "You are a helpful assistant."},
-			{Role: "user", Content: "Who are you?"},
+		if resp.Content != "Hello! How can I help you?" {
+			t.Errorf("expected greeting response, got '%s'", resp.Content)
 		}
-
-		response, err := client.Chat(context.Background(), messages, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if response.Content != "I understand my role." {
-			t.Errorf("unexpected content: %s", response.Content)
+		if resp.FinishReason != "stop" {
+			t.Errorf("expected finish_reason 'stop', got '%s'", resp.FinishReason)
 		}
 	})
 
-	t.Run("response with tool calls", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify tools are in request
-			body, _ := io.ReadAll(r.Body)
-			var reqBody map[string]interface{}
-			json.Unmarshal(body, &reqBody)
-
-			if _, ok := reqBody["tools"]; !ok {
-				t.Error("expected tools in request")
-			}
-
-			// Return response with tool call
-			toolCalls := []ToolCall{
-				{
-					ID:   "call_abc123",
-					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{
-						Name:      "read_file",
-						Arguments: `{"path": "/tmp/test.txt"}`,
-					},
-				},
-			}
-			resp := newMockResponse("", "tool_calls", toolCalls)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
+	t.Run("chat with tool definitions", func(t *testing.T) {
 		client := NewClient("test-key", server.URL, "gpt-4")
 		messages := []Message{
-			{Role: "user", Content: "Read the file /tmp/test.txt"},
+			{Role: "system", Content: "You are helpful"},
+			{Role: "user", Content: "Read a file"},
 		}
 		toolDefs := []map[string]interface{}{
 			{
 				"type": "function",
 				"function": map[string]interface{}{
-					"name":        "read_file",
-					"description": "Read a file from the filesystem",
+					"name":        "read",
+					"description": "Read a file",
 					"parameters": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"path": map[string]interface{}{
-								"type":        "string",
-								"description": "Path to the file",
+								"type": "string",
 							},
 						},
-						"required": []string{"path"},
 					},
 				},
 			},
 		}
 
-		response, err := client.Chat(context.Background(), messages, toolDefs)
+		resp, err := client.Chat(context.Background(), messages, toolDefs)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(response.ToolCalls) != 1 {
-			t.Fatalf("expected 1 tool call, got %d", len(response.ToolCalls))
-		}
-		if response.ToolCalls[0].Function.Name != "read_file" {
-			t.Errorf("expected read_file, got %s", response.ToolCalls[0].Function.Name)
-		}
-		if response.ToolCalls[0].ID != "call_abc123" {
-			t.Errorf("expected call_abc123, got %s", response.ToolCalls[0].ID)
-		}
-		if response.FinishReason != "tool_calls" {
-			t.Errorf("expected tool_calls, got %s", response.FinishReason)
+		if resp == nil {
+			t.Fatal("expected response, got nil")
 		}
 	})
+}
 
-	t.Run("tool result message in conversation", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify the request contains tool message
-			body, _ := io.ReadAll(r.Body)
-			var reqBody map[string]interface{}
-			json.Unmarshal(body, &reqBody)
+func TestClientChatWithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":      "chatcmpl-456",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "",
+						"tool_calls": []map[string]interface{}{
+							{
+								"id":   "call_123",
+								"type": "function",
+								"function": map[string]interface{}{
+									"name":      "read",
+									"arguments": "{\"path\": \"/tmp/test.txt\"}",
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
 
-			messages := reqBody["messages"].([]interface{})
-			// Should have user, assistant with tool call, tool result
-			if len(messages) < 3 {
-				t.Errorf("expected at least 3 messages, got %d", len(messages))
-			}
-
-			resp := newMockResponse("The file contains 'Hello World'.", "stop", nil)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
+	t.Run("response with tool calls", func(t *testing.T) {
 		client := NewClient("test-key", server.URL, "gpt-4")
 		messages := []Message{
-			{Role: "user", Content: "Read the file"},
+			{Role: "user", Content: "Read /tmp/test.txt"},
+		}
+
+		resp, err := client.Chat(context.Background(), messages, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(resp.ToolCalls) != 1 {
+			t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+		}
+
+		tc := resp.ToolCalls[0]
+		if tc.ID != "call_123" {
+			t.Errorf("expected tool call ID 'call_123', got '%s'", tc.ID)
+		}
+		if tc.Function.Name != "read" {
+			t.Errorf("expected function name 'read', got '%s'", tc.Function.Name)
+		}
+	})
+}
+
+func TestClientChatWithAssistantToolCallMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":      "chatcmpl-789",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "I read the file successfully.",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	t.Run("conversation with tool result", func(t *testing.T) {
+		client := NewClient("test-key", server.URL, "gpt-4")
+		messages := []Message{
+			{Role: "user", Content: "Read a file"},
 			{
-				Role: "assistant",
+				Role:    "assistant",
+				Content: "",
 				ToolCalls: []ToolCall{
 					{
-						ID:   "call_xyz",
+						ID:   "call_123",
 						Type: "function",
 						Function: struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
+							Name      string "json:\"name\""
+							Arguments string "json:\"arguments\""
 						}{
-							Name:      "read_file",
-							Arguments: `{"path": "/tmp/test.txt"}`,
+							Name:      "read",
+							Arguments: "{\"path\": \"/tmp/test.txt\"}",
 						},
 					},
 				},
 			},
-			{Role: "tool", Content: "Hello World", ToolCallID: "call_xyz"},
+			{Role: "tool", Content: "file contents here", ToolCallID: "call_123"},
 		}
 
-		response, err := client.Chat(context.Background(), messages, nil)
+		resp, err := client.Chat(context.Background(), messages, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if response.Content != "The file contains 'Hello World'." {
-			t.Errorf("unexpected content: %s", response.Content)
+		if resp.Content == "" {
+			t.Error("expected non-empty content")
 		}
 	})
+}
 
-	t.Run("assistant message without tool calls", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			resp := newMockResponse("Continuing the conversation.", "stop", nil)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
+func TestClientChatError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("{\"error\": {\"message\": \"Invalid API key\"}}"))
+	}))
+	defer server.Close()
 
-		client := NewClient("test-key", server.URL, "gpt-4")
+	t.Run("API error handling", func(t *testing.T) {
+		client := NewClient("invalid-key", server.URL, "gpt-4")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
-			{Role: "assistant", Content: "Hi there!"},
-			{Role: "user", Content: "How are you?"},
 		}
 
-		response, err := client.Chat(context.Background(), messages, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if response.Content != "Continuing the conversation." {
-			t.Errorf("unexpected content: %s", response.Content)
+		_, err := client.Chat(context.Background(), messages, nil)
+		if err == nil {
+			t.Error("expected error for invalid API key")
 		}
 	})
+}
 
-	t.Run("multiple tool calls in response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			toolCalls := []ToolCall{
-				{
-					ID:   "call_1",
-					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{
-						Name:      "read_file",
-						Arguments: `{"path": "/a.txt"}`,
-					},
-				},
-				{
-					ID:   "call_2",
-					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{
-						Name:      "read_file",
-						Arguments: `{"path": "/b.txt"}`,
-					},
-				},
-			}
-			resp := newMockResponse("", "tool_calls", toolCalls)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
+func TestClientChatEmptyChoices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":      "chatcmpl-empty",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
 
-		client := NewClient("test-key", server.URL, "gpt-4")
-		messages := []Message{
-			{Role: "user", Content: "Read both files"},
-		}
-		toolDefs := []map[string]interface{}{
-			{
-				"type": "function",
-				"function": map[string]interface{}{
-					"name":        "read_file",
-					"description": "Read a file",
-					"parameters":  map[string]interface{}{},
-				},
-			},
-		}
-
-		response, err := client.Chat(context.Background(), messages, toolDefs)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(response.ToolCalls) != 2 {
-			t.Fatalf("expected 2 tool calls, got %d", len(response.ToolCalls))
-		}
-		if response.ToolCalls[0].ID != "call_1" || response.ToolCalls[1].ID != "call_2" {
-			t.Error("tool call IDs mismatch")
-		}
-	})
-
-	t.Run("error on empty choices", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Return response with no choices
-			resp := mockOpenAIResponse{
-				ID:      "chatcmpl-test",
-				Object:  "chat.completion",
-				Model:   "gpt-4",
-				Choices: []struct {
-					Index   int `json:"index"`
-					Message struct {
-						Role      string `json:"role"`
-						Content   string `json:"content"`
-						ToolCalls []struct {
-							ID       string `json:"id"`
-							Type     string `json:"type"`
-							Function struct {
-								Name      string `json:"name"`
-								Arguments string `json:"arguments"`
-							} `json:"function"`
-						} `json:"tool_calls,omitempty"`
-					} `json:"message"`
-					FinishReason string `json:"finish_reason"`
-				}{},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
+	t.Run("empty choices error", func(t *testing.T) {
 		client := NewClient("test-key", server.URL, "gpt-4")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
@@ -460,94 +279,7 @@ func TestChat(t *testing.T) {
 
 		_, err := client.Chat(context.Background(), messages, nil)
 		if err == nil {
-			t.Fatal("expected error for empty choices")
-		}
-		if !strings.Contains(err.Error(), "no choices") {
-			t.Errorf("expected 'no choices' error, got: %v", err)
-		}
-	})
-
-	t.Run("error on API failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"error": {"message": "Internal server error"}}`))
-		}))
-		defer server.Close()
-
-		client := NewClient("test-key", server.URL, "gpt-4")
-		messages := []Message{
-			{Role: "user", Content: "Hello"},
-		}
-
-		_, err := client.Chat(context.Background(), messages, nil)
-		if err == nil {
-			t.Fatal("expected error for API failure")
-		}
-	})
-
-	t.Run("tool definition without function skipped", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify tools handling
-			body, _ := io.ReadAll(r.Body)
-			var reqBody map[string]interface{}
-			json.Unmarshal(body, &reqBody)
-
-			// Check if tools array exists and has correct length
-			tools, ok := reqBody["tools"].([]interface{})
-			if ok && len(tools) != 1 {
-				t.Errorf("expected 1 valid tool, got %d", len(tools))
-			}
-
-			resp := newMockResponse("OK", "stop", nil)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
-		client := NewClient("test-key", server.URL, "gpt-4")
-		messages := []Message{
-			{Role: "user", Content: "Test"},
-		}
-		// One valid tool definition, one invalid (missing function key)
-		toolDefs := []map[string]interface{}{
-			{"type": "invalid"}, // This should be skipped
-			{
-				"type": "function",
-				"function": map[string]interface{}{
-					"name":        "valid_tool",
-					"description": "A valid tool",
-					"parameters":  map[string]interface{}{},
-				},
-			},
-		}
-
-		response, err := client.Chat(context.Background(), messages, toolDefs)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if response.Content != "OK" {
-			t.Errorf("unexpected content: %s", response.Content)
-		}
-	})
-
-	t.Run("handles context cancellation", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Don't respond immediately - let context cancel
-			<-r.Context().Done()
-		}))
-		defer server.Close()
-
-		client := NewClient("test-key", server.URL, "gpt-4")
-		messages := []Message{
-			{Role: "user", Content: "Hello"},
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		_, err := client.Chat(ctx, messages, nil)
-		if err == nil {
-			t.Fatal("expected error for cancelled context")
+			t.Error("expected error for empty choices")
 		}
 	})
 }

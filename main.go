@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,46 +20,45 @@ const (
 	colorGray   = "\033[90m"
 )
 
-func main() {
-	// Load configuration from environment
+// Config holds the application configuration.
+type Config struct {
+	APIKey  string
+	BaseURL string
+	Model   string
+}
+
+// LoadConfig loads configuration from environment variables.
+func LoadConfig() (*Config, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		fmt.Println("Error: OPENAI_API_KEY environment variable is required")
-		os.Exit(1)
+		return nil, fmt.Errorf("OPENAI_API_KEY environment variable is required")
 	}
 
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := GetEnvOrDefault("PIGO_MODEL", "gpt-4o")
+	return &Config{
+		APIKey:  apiKey,
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		Model:   GetEnvOrDefault("PIGO_MODEL", "gpt-4o"),
+	}, nil
+}
 
-	// Create client and tool registry
-	client := NewClient(apiKey, baseURL, model)
+// App represents the pigo application.
+type App struct {
+	client   *Client
+	registry *ToolRegistry
+	messages []Message
+	output   io.Writer
+}
+
+// NewApp creates a new App instance.
+func NewApp(cfg *Config) *App {
+	client := NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model)
 	registry := NewToolRegistry()
 
-	// Register tools
 	registry.Register(NewReadTool())
 	registry.Register(NewWriteTool())
 	registry.Register(NewEditTool())
 	registry.Register(NewBashTool())
 
-	// Print welcome message
-	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s)\n", colorGreen, colorReset, model)
-	fmt.Printf("Tools: %s\n", strings.Join(registry.List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear)\n\n")
-
-	// Setup signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		fmt.Println("\nGoodbye!")
-		cancel()
-		os.Exit(0)
-	}()
-
-	// Initialize conversation history
 	messages := []Message{
 		{
 			Role: "system",
@@ -72,7 +72,143 @@ When helping with coding tasks:
 		},
 	}
 
-	// Main loop
+	return &App{
+		client:   client,
+		registry: registry,
+		messages: messages,
+		output:   os.Stdout,
+	}
+}
+
+// HandleCommand processes a command and returns true if handled.
+func (a *App) HandleCommand(input string) (handled bool, exit bool) {
+	switch input {
+	case "/q", "exit", "quit":
+		fmt.Fprintln(a.output, "Goodbye!")
+		return true, true
+	case "/c", "clear":
+		a.messages = a.messages[:1]
+		fmt.Fprintln(a.output, "Conversation cleared.")
+		return true, false
+	}
+	return false, false
+}
+
+// ProcessInput processes user input and runs the agent loop.
+func (a *App) ProcessInput(ctx context.Context, input string) error {
+	if input == "" {
+		return nil
+	}
+
+	// Add user message
+	a.messages = append(a.messages, Message{
+		Role:    "user",
+		Content: input,
+	})
+
+	// Agent loop
+	for iterations := 0; iterations < 10; iterations++ {
+		response, err := a.client.Chat(ctx, a.messages, a.registry.GetDefinitions())
+		if err != nil {
+			return fmt.Errorf("chat error: %w", err)
+		}
+
+		// Handle tool calls
+		if len(response.ToolCalls) > 0 {
+			a.messages = append(a.messages, Message{
+				Role:      "assistant",
+				Content:   response.Content,
+				ToolCalls: response.ToolCalls,
+			})
+
+			for _, tc := range response.ToolCalls {
+				fmt.Fprintf(a.output, "%s[%s]%s ", colorGray, tc.Function.Name, colorReset)
+
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+					result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
+					a.messages = append(a.messages, Message{
+						Role:       "tool",
+						Content:    result.ForLLM,
+						ToolCallID: tc.ID,
+					})
+					continue
+				}
+
+				result := a.registry.Execute(ctx, tc.Function.Name, args)
+
+				if !result.Silent && result.ForUser != "" {
+					fmt.Fprintln(a.output)
+					lines := strings.Split(result.ForUser, "\n")
+					if len(lines) > 20 {
+						for _, line := range lines[:20] {
+							fmt.Fprintln(a.output, line)
+						}
+						fmt.Fprintf(a.output, "... (%d more lines)\n", len(lines)-20)
+					} else {
+						fmt.Fprintln(a.output, result.ForUser)
+					}
+				}
+
+				a.messages = append(a.messages, Message{
+					Role:       "tool",
+					Content:    result.ForLLM,
+					ToolCallID: tc.ID,
+				})
+			}
+			fmt.Fprintln(a.output)
+			continue
+		}
+
+		// No tool calls - print response and break
+		if response.Content != "" {
+			fmt.Fprintf(a.output, "\n%s\n\n", response.Content)
+		}
+		a.messages = append(a.messages, Message{
+			Role:    "assistant",
+			Content: response.Content,
+		})
+		break
+	}
+
+	return nil
+}
+
+// GetRegistry returns the tool registry.
+func (a *App) GetRegistry() *ToolRegistry {
+	return a.registry
+}
+
+// GetModel returns the model name.
+func (a *App) GetModel() string {
+	return a.client.GetModel()
+}
+
+func main() {
+	cfg, err := LoadConfig()
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
+	app := NewApp(cfg)
+
+	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s)\n", colorGreen, colorReset, app.GetModel())
+	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
+	fmt.Printf("Commands: /q (quit), /c (clear)\n\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nGoodbye!")
+		cancel()
+		os.Exit(0)
+	}()
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Printf("%s> %s", colorBlue, colorReset)
@@ -86,93 +222,16 @@ When helping with coding tasks:
 			continue
 		}
 
-		// Handle commands
-		switch input {
-		case "/q", "exit", "quit":
-			fmt.Println("Goodbye!")
+		handled, exit := app.HandleCommand(input)
+		if exit {
 			return
-		case "/c", "clear":
-			messages = messages[:1] // Keep system message
-			fmt.Println("Conversation cleared.")
+		}
+		if handled {
 			continue
 		}
 
-		// Add user message
-		messages = append(messages, Message{
-			Role:    "user",
-			Content: input,
-		})
-
-		// Agent loop
-		for iterations := 0; iterations < 10; iterations++ {
-			response, err := client.Chat(ctx, messages, registry.GetDefinitions())
-			if err != nil {
-				fmt.Printf("%sError: %v%s\n", colorYellow, err, colorReset)
-				break
-			}
-
-			// Handle tool calls
-			if len(response.ToolCalls) > 0 {
-				// Add assistant message with tool calls
-				messages = append(messages, Message{
-					Role:      "assistant",
-					Content:   response.Content,
-					ToolCalls: response.ToolCalls,
-				})
-
-				// Execute each tool call
-				for _, tc := range response.ToolCalls {
-					fmt.Printf("%s[%s]%s ", colorGray, tc.Function.Name, colorReset)
-
-					// Parse arguments
-					var args map[string]interface{}
-					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-						result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-						messages = append(messages, Message{
-							Role:       "tool",
-							Content:    result.ForLLM,
-							ToolCallID: tc.ID,
-						})
-						continue
-					}
-
-					// Execute tool
-					result := registry.Execute(ctx, tc.Function.Name, args)
-
-					// Show user-facing output
-					if !result.Silent && result.ForUser != "" {
-						fmt.Println()
-						lines := strings.Split(result.ForUser, "\n")
-						if len(lines) > 20 {
-							for _, line := range lines[:20] {
-								fmt.Println(line)
-							}
-							fmt.Printf("... (%d more lines)\n", len(lines)-20)
-						} else {
-							fmt.Println(result.ForUser)
-						}
-					}
-
-					// Add tool result to messages
-					messages = append(messages, Message{
-						Role:       "tool",
-						Content:    result.ForLLM,
-						ToolCallID: tc.ID,
-					})
-				}
-				fmt.Println()
-				continue // Continue agent loop for more tool calls
-			}
-
-			// No tool calls - print response and break
-			if response.Content != "" {
-				fmt.Printf("\n%s\n\n", response.Content)
-			}
-			messages = append(messages, Message{
-				Role:    "assistant",
-				Content: response.Content,
-			})
-			break
+		if err := app.ProcessInput(ctx, input); err != nil {
+			fmt.Printf("%sError: %v%s\n", colorYellow, err, colorReset)
 		}
 	}
 }
