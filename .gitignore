@@ -1,0 +1,12 @@
+# Binary
+pigo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+*.test
+coverage.out

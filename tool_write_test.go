@@ -1,0 +1,90 @@
+package main
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestWriteTool(t *testing.T) {
+	tool := NewWriteTool()
+	tmpDir := t.TempDir()
+
+	t.Run("write new file", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "new.txt")
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":    testFile,
+			"content": "hello world",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "hello world" {
+			t.Errorf("expected 'hello world', got '%s'", string(content))
+		}
+	})
+
+	t.Run("overwrite existing file", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "existing.txt")
+		os.WriteFile(testFile, []byte("old content"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":    testFile,
+			"content": "new content",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "new content" {
+			t.Errorf("expected 'new content', got '%s'", string(content))
+		}
+	})
+
+	t.Run("create parent directories", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "nested", "dir", "file.txt")
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":    testFile,
+			"content": "nested content",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "nested content" {
+			t.Errorf("expected 'nested content', got '%s'", string(content))
+		}
+	})
+
+	t.Run("missing path", func(t *testing.T) {
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"content": "test",
+		})
+		if !result.IsError {
+			t.Error("expected error for missing path")
+		}
+	})
+
+	t.Run("missing content", func(t *testing.T) {
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path": filepath.Join(tmpDir, "test.txt"),
+		})
+		if !result.IsError {
+			t.Error("expected error for missing content")
+		}
+	})
+}
