@@ -74,6 +74,7 @@ Done! I've added a package comment explaining the purpose of the file.
 | `OPENAI_API_KEY` | Yes | - | API key for authentication |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | Custom API endpoint |
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
+| `PIGO_MEMPROFILE` | No | - | File path to write heap profile on exit |
 
 ## Tools
 
@@ -147,17 +148,31 @@ Design patterns from [picoclaw](https://github.com/sipeed/picoclaw):
 ## Development
 
 ```bash
-# Run tests
-go test ./...
+make help        # Show all available commands
+```
 
-# Run with verbose output
-go test -v ./...
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the binary |
+| `make run` | Run from source |
+| `make clean` | Remove build artifacts and profiles |
+| `make test` | Run tests |
+| `make test-race` | Run tests with race detector |
+| `make test-cover` | Run tests with coverage report |
+| `make lint` | Run all linters (fmt + vet) |
+| `make prof-mem` | Run with memory profiling, then open in browser |
 
-# Check coverage
-go test -cover ./...
+### Memory Profiling
 
-# Build
-go build -o pigo .
+```bash
+# Option 1: via make (builds, runs, then opens profile in browser)
+make prof-mem
+
+# Option 2: manually
+PIGO_MEMPROFILE=mem.prof ./pigo
+# use pigo, then exit with /q
+go tool pprof mem.prof        # interactive CLI
+go tool pprof -http=:8080 mem.prof  # browser UI
 ```
 
 ## License

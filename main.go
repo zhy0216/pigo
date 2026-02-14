@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 )
@@ -187,6 +189,21 @@ func (a *App) GetModel() string {
 }
 
 func main() {
+	if memProfile := os.Getenv("PIGO_MEMPROFILE"); memProfile != "" {
+		defer func() {
+			runtime.GC()
+			f, err := os.Create(memProfile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
+				return
+			}
+			defer f.Close()
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
+			}
+		}()
+	}
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		fmt.Println("Error:", err)
