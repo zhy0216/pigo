@@ -10,3 +10,4 @@ pigo
 # Test artifacts
 *.test
 coverage.out
+.env

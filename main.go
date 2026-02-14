@@ -25,6 +25,7 @@ type Config struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+	APIType string // "chat" or "responses"
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -38,6 +39,7 @@ func LoadConfig() (*Config, error) {
 		APIKey:  apiKey,
 		BaseURL: os.Getenv("OPENAI_BASE_URL"),
 		Model:   GetEnvOrDefault("PIGO_MODEL", "gpt-4o"),
+		APIType: GetEnvOrDefault("OPENAI_API_TYPE", "chat"),
 	}, nil
 }
 
@@ -51,7 +53,7 @@ type App struct {
 
 // NewApp creates a new App instance.
 func NewApp(cfg *Config) *App {
-	client := NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model)
+	client := NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
 	registry := NewToolRegistry()
 
 	registry.Register(NewReadTool())
@@ -193,7 +195,7 @@ func main() {
 
 	app := NewApp(cfg)
 
-	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s)\n", colorGreen, colorReset, app.GetModel())
+	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
 	fmt.Printf("Commands: /q (quit), /c (clear)\n\n")
 

@@ -10,14 +10,14 @@ import (
 
 func TestNewClient(t *testing.T) {
 	t.Run("create client with defaults", func(t *testing.T) {
-		client := NewClient("test-key", "", "gpt-4")
+		client := NewClient("test-key", "", "gpt-4", "chat")
 		if client.GetModel() != "gpt-4" {
 			t.Errorf("expected model 'gpt-4', got '%s'", client.GetModel())
 		}
 	})
 
 	t.Run("create client with custom base URL", func(t *testing.T) {
-		client := NewClient("test-key", "https://custom.api.com", "gpt-4o")
+		client := NewClient("test-key", "https://custom.api.com", "gpt-4o", "chat")
 		if client.GetModel() != "gpt-4o" {
 			t.Errorf("expected model 'gpt-4o', got '%s'", client.GetModel())
 		}
@@ -70,7 +70,7 @@ func TestClientChat(t *testing.T) {
 	defer server.Close()
 
 	t.Run("successful chat completion", func(t *testing.T) {
-		client := NewClient("test-key", server.URL, "gpt-4")
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
 		}
@@ -89,7 +89,7 @@ func TestClientChat(t *testing.T) {
 	})
 
 	t.Run("chat with tool definitions", func(t *testing.T) {
-		client := NewClient("test-key", server.URL, "gpt-4")
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "system", Content: "You are helpful"},
 			{Role: "user", Content: "Read a file"},
@@ -156,7 +156,7 @@ func TestClientChatWithToolCalls(t *testing.T) {
 	defer server.Close()
 
 	t.Run("response with tool calls", func(t *testing.T) {
-		client := NewClient("test-key", server.URL, "gpt-4")
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "user", Content: "Read /tmp/test.txt"},
 		}
@@ -204,7 +204,7 @@ func TestClientChatWithAssistantToolCallMessage(t *testing.T) {
 	defer server.Close()
 
 	t.Run("conversation with tool result", func(t *testing.T) {
-		client := NewClient("test-key", server.URL, "gpt-4")
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "user", Content: "Read a file"},
 			{
@@ -245,7 +245,7 @@ func TestClientChatError(t *testing.T) {
 	defer server.Close()
 
 	t.Run("API error handling", func(t *testing.T) {
-		client := NewClient("invalid-key", server.URL, "gpt-4")
+		client := NewClient("invalid-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
 		}
@@ -272,7 +272,7 @@ func TestClientChatEmptyChoices(t *testing.T) {
 	defer server.Close()
 
 	t.Run("empty choices error", func(t *testing.T) {
-		client := NewClient("test-key", server.URL, "gpt-4")
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
 		messages := []Message{
 			{Role: "user", Content: "Hello"},
 		}
