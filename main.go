@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -148,40 +149,72 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 				ToolCalls: response.ToolCalls,
 			})
 
+			// Print tool names
 			for _, tc := range response.ToolCalls {
 				fmt.Fprintf(a.output, "%s[%s]%s ", colorGray, tc.Function.Name, colorReset)
+			}
 
-				var args map[string]interface{}
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-					result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-					a.messages = append(a.messages, Message{
-						Role:       "tool",
-						Content:    result.ForLLM,
-						ToolCallID: tc.ID,
-					})
-					continue
-				}
+			// Execute tool calls concurrently
+			type toolCallResult struct {
+				msg    Message
+				output string
+			}
+			results := make([]toolCallResult, len(response.ToolCalls))
+			var wg sync.WaitGroup
 
-				result := a.registry.Execute(ctx, tc.Function.Name, args)
+			for i, tc := range response.ToolCalls {
+				wg.Add(1)
+				go func(i int, tc ToolCall) {
+					defer wg.Done()
 
-				if !result.Silent && result.ForUser != "" {
-					fmt.Fprintln(a.output)
-					lines := strings.Split(result.ForUser, "\n")
-					if len(lines) > 20 {
-						for _, line := range lines[:20] {
-							fmt.Fprintln(a.output, line)
+					var args map[string]interface{}
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+						result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
+						results[i] = toolCallResult{
+							msg: Message{
+								Role:       "tool",
+								Content:    result.ForLLM,
+								ToolCallID: tc.ID,
+							},
 						}
-						fmt.Fprintf(a.output, "... (%d more lines)\n", len(lines)-20)
-					} else {
-						fmt.Fprintln(a.output, result.ForUser)
+						return
 					}
-				}
 
-				a.messages = append(a.messages, Message{
-					Role:       "tool",
-					Content:    result.ForLLM,
-					ToolCallID: tc.ID,
-				})
+					result := a.registry.Execute(ctx, tc.Function.Name, args)
+
+					var buf strings.Builder
+					if !result.Silent && result.ForUser != "" {
+						lines := strings.Split(result.ForUser, "\n")
+						if len(lines) > 20 {
+							for _, line := range lines[:20] {
+								fmt.Fprintln(&buf, line)
+							}
+							fmt.Fprintf(&buf, "... (%d more lines)\n", len(lines)-20)
+						} else {
+							fmt.Fprintln(&buf, result.ForUser)
+						}
+					}
+
+					results[i] = toolCallResult{
+						msg: Message{
+							Role:       "tool",
+							Content:    result.ForLLM,
+							ToolCallID: tc.ID,
+						},
+						output: buf.String(),
+					}
+				}(i, tc)
+			}
+
+			wg.Wait()
+
+			// Print outputs and collect messages in order
+			for _, r := range results {
+				if r.output != "" {
+					fmt.Fprintln(a.output)
+					fmt.Fprint(a.output, r.output)
+				}
+				a.messages = append(a.messages, r.msg)
 			}
 			fmt.Fprintln(a.output)
 			continue
