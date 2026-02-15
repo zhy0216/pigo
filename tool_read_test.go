@@ -8,11 +8,12 @@ import (
 )
 
 func TestReadTool(t *testing.T) {
-	tool := NewReadTool()
+	tmpDir := t.TempDir()
+	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
+	tool := NewReadTool(resolvedDir)
 
 	// Create temp file
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
+	testFile := filepath.Join(resolvedDir, "test.txt")
 	content := "line 1\nline 2\nline 3\nline 4\nline 5"
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -60,7 +61,7 @@ func TestReadTool(t *testing.T) {
 
 	t.Run("file not found", func(t *testing.T) {
 		result := tool.Execute(context.Background(), map[string]interface{}{
-			"path": "/nonexistent/file.txt",
+			"path": filepath.Join(resolvedDir, "nonexistent.txt"),
 		})
 		if !result.IsError {
 			t.Error("expected error for nonexistent file")
@@ -76,10 +77,42 @@ func TestReadTool(t *testing.T) {
 
 	t.Run("directory error", func(t *testing.T) {
 		result := tool.Execute(context.Background(), map[string]interface{}{
-			"path": tmpDir,
+			"path": resolvedDir,
 		})
 		if !result.IsError {
 			t.Error("expected error for directory")
+		}
+	})
+
+	t.Run("file too large", func(t *testing.T) {
+		largeFile := filepath.Join(resolvedDir, "large.bin")
+		f, err := os.Create(largeFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Truncate(maxReadFileSize + 1)
+		f.Close()
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path": largeFile,
+		})
+		if !result.IsError {
+			t.Error("expected error for large file")
+		}
+		if !contains(result.ForLLM, "too large") {
+			t.Errorf("expected 'too large' in error, got: %s", result.ForLLM)
+		}
+	})
+
+	t.Run("path outside allowed directory", func(t *testing.T) {
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path": "/etc/passwd",
+		})
+		if !result.IsError {
+			t.Error("expected error for path outside allowed directory")
+		}
+		if !contains(result.ForLLM, "outside the allowed directory") {
+			t.Errorf("expected boundary error, got: %s", result.ForLLM)
 		}
 	})
 }

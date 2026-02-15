@@ -8,11 +8,13 @@ import (
 )
 
 // EditTool replaces text in a file.
-type EditTool struct{}
+type EditTool struct {
+	allowedDir string
+}
 
-// NewEditTool creates a new EditTool.
-func NewEditTool() *EditTool {
-	return &EditTool{}
+// NewEditTool creates a new EditTool. Files are restricted to allowedDir when non-empty.
+func NewEditTool(allowedDir string) *EditTool {
+	return &EditTool{allowedDir: allowedDir}
 }
 
 func (t *EditTool) Name() string {
@@ -49,27 +51,24 @@ func (t *EditTool) Parameters() map[string]interface{} {
 }
 
 func (t *EditTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	path, ok := args["path"].(string)
-	if !ok {
-		return ErrorResult("path is required")
+	path, err := extractString(args, "path")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	oldString, ok := args["old_string"].(string)
-	if !ok {
-		return ErrorResult("old_string is required")
+	oldString, err := extractString(args, "old_string")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	newString, ok := args["new_string"].(string)
-	if !ok {
-		return ErrorResult("new_string is required")
+	newString, err := extractString(args, "new_string")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	replaceAll := false
-	if v, ok := args["all"].(bool); ok {
-		replaceAll = v
-	}
+	replaceAll := extractBool(args, "all", false)
 
-	resolvedPath, err := validatePath(path)
+	resolvedPath, err := validatePath(path, t.allowedDir)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}

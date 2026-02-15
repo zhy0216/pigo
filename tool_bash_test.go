@@ -71,4 +71,21 @@ func TestBashTool(t *testing.T) {
 			t.Errorf("expected '(no output)', got: %s", result.ForLLM)
 		}
 	})
+
+	t.Run("env sanitization hides sensitive vars", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "super-secret-key")
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"command": "env",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+		if strings.Contains(result.ForLLM, "super-secret-key") {
+			t.Error("OPENAI_API_KEY should not appear in env output")
+		}
+		if strings.Contains(result.ForLLM, "OPENAI_API_KEY") {
+			t.Error("OPENAI_API_KEY variable name should not appear in env output")
+		}
+	})
 }

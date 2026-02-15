@@ -744,3 +744,67 @@ func TestConcurrentToolCallsWithMixedErrors(t *testing.T) {
 		t.Errorf("third call should succeed, got: %s", toolMsgs[2].Content)
 	}
 }
+
+func TestTruncateMessages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":      "chatcmpl-trunc",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "OK",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := &Config{
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Model:   "gpt-4",
+	}
+
+	app := NewApp(cfg)
+	output := &bytes.Buffer{}
+	app.output = output
+
+	// Fill with 30 large messages (20K chars each = 600K total, well above 200K threshold)
+	largeContent := strings.Repeat("x", 20000)
+	for i := 0; i < 30; i++ {
+		app.messages = append(app.messages, Message{
+			Role:    "user",
+			Content: fmt.Sprintf("msg-%d: %s", i, largeContent),
+		})
+	}
+
+	err := app.ProcessInput(context.Background(), "trigger truncation")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify truncation happened
+	outputStr := output.String()
+	if !strings.Contains(outputStr, "context truncated") {
+		t.Error("expected truncation warning in output")
+	}
+
+	// System prompt should be preserved
+	if app.messages[0].Role != "system" {
+		t.Error("expected system prompt to be preserved as first message")
+	}
+
+	// Truncation notice should be second message
+	if !strings.Contains(app.messages[1].Content, "truncated") {
+		t.Error("expected truncation notice as second message")
+	}
+}

@@ -9,12 +9,13 @@ import (
 
 func TestIntegration_ReadWriteEditWorkflow(t *testing.T) {
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
+	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
+	testFile := filepath.Join(resolvedDir, "test.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewReadTool())
-	registry.Register(NewWriteTool())
-	registry.Register(NewEditTool())
+	registry.Register(NewReadTool(resolvedDir))
+	registry.Register(NewWriteTool(resolvedDir))
+	registry.Register(NewEditTool(resolvedDir))
 	registry.Register(NewBashTool())
 
 	ctx := context.Background()
@@ -113,11 +114,12 @@ func TestIntegration_ToolNotFound(t *testing.T) {
 
 func TestIntegration_NestedDirectoryWrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	nestedFile := filepath.Join(tmpDir, "a", "b", "c", "file.txt")
+	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
+	nestedFile := filepath.Join(resolvedDir, "a", "b", "c", "file.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewWriteTool())
-	registry.Register(NewReadTool())
+	registry.Register(NewWriteTool(resolvedDir))
+	registry.Register(NewReadTool(resolvedDir))
 
 	ctx := context.Background()
 
@@ -144,11 +146,12 @@ func TestIntegration_NestedDirectoryWrite(t *testing.T) {
 
 func TestIntegration_EditWithReplaceAll(t *testing.T) {
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "replace.txt")
+	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
+	testFile := filepath.Join(resolvedDir, "replace.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewWriteTool())
-	registry.Register(NewEditTool())
+	registry.Register(NewWriteTool(resolvedDir))
+	registry.Register(NewEditTool(resolvedDir))
 
 	ctx := context.Background()
 

@@ -7,11 +7,13 @@ import (
 )
 
 // ReadTool reads file contents with line numbers.
-type ReadTool struct{}
+type ReadTool struct {
+	allowedDir string
+}
 
-// NewReadTool creates a new ReadTool.
-func NewReadTool() *ReadTool {
-	return &ReadTool{}
+// NewReadTool creates a new ReadTool. Files are restricted to allowedDir when non-empty.
+func NewReadTool(allowedDir string) *ReadTool {
+	return &ReadTool{allowedDir: allowedDir}
 }
 
 func (t *ReadTool) Name() string {
@@ -44,12 +46,12 @@ func (t *ReadTool) Parameters() map[string]interface{} {
 }
 
 func (t *ReadTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	path, ok := args["path"].(string)
-	if !ok {
-		return ErrorResult("path is required")
+	path, err := extractString(args, "path")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	resolvedPath, err := validatePath(path)
+	resolvedPath, err := validatePath(path, t.allowedDir)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -66,20 +68,17 @@ func (t *ReadTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(fmt.Sprintf("path is a directory: %s", path))
 	}
 
+	if info.Size() > maxReadFileSize {
+		return ErrorResult(fmt.Sprintf("file is too large (%d bytes, max %d). Use offset and limit to read a portion", info.Size(), maxReadFileSize))
+	}
+
 	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
 
-	offset := 1
-	if v, ok := args["offset"].(float64); ok {
-		offset = int(v)
-	}
-
-	limit := 0
-	if v, ok := args["limit"].(float64); ok {
-		limit = int(v)
-	}
+	offset := extractInt(args, "offset", 1)
+	limit := extractInt(args, "limit", 0)
 
 	formatted := formatWithLineNumbers(string(content), offset, limit)
 	return NewToolResult(formatted)

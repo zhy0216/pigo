@@ -8,11 +8,12 @@ import (
 )
 
 func TestWriteTool(t *testing.T) {
-	tool := NewWriteTool()
 	tmpDir := t.TempDir()
+	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
+	tool := NewWriteTool(resolvedDir)
 
 	t.Run("write new file", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "new.txt")
+		testFile := filepath.Join(resolvedDir, "new.txt")
 		result := tool.Execute(context.Background(), map[string]interface{}{
 			"path":    testFile,
 			"content": "hello world",
@@ -31,7 +32,7 @@ func TestWriteTool(t *testing.T) {
 	})
 
 	t.Run("overwrite existing file", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "existing.txt")
+		testFile := filepath.Join(resolvedDir, "existing.txt")
 		os.WriteFile(testFile, []byte("old content"), 0644)
 
 		result := tool.Execute(context.Background(), map[string]interface{}{
@@ -52,7 +53,7 @@ func TestWriteTool(t *testing.T) {
 	})
 
 	t.Run("create parent directories", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "nested", "dir", "file.txt")
+		testFile := filepath.Join(resolvedDir, "nested", "dir", "file.txt")
 		result := tool.Execute(context.Background(), map[string]interface{}{
 			"path":    testFile,
 			"content": "nested content",
@@ -81,7 +82,7 @@ func TestWriteTool(t *testing.T) {
 
 	t.Run("missing content", func(t *testing.T) {
 		result := tool.Execute(context.Background(), map[string]interface{}{
-			"path": filepath.Join(tmpDir, "test.txt"),
+			"path": filepath.Join(resolvedDir, "test.txt"),
 		})
 		if !result.IsError {
 			t.Error("expected error for missing content")
@@ -89,7 +90,7 @@ func TestWriteTool(t *testing.T) {
 	})
 
 	t.Run("preserves existing file permissions on overwrite", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "restricted.txt")
+		testFile := filepath.Join(resolvedDir, "restricted.txt")
 		os.WriteFile(testFile, []byte("old"), 0600)
 
 		result := tool.Execute(context.Background(), map[string]interface{}{
@@ -106,6 +107,19 @@ func TestWriteTool(t *testing.T) {
 		}
 		if info.Mode().Perm() != 0600 {
 			t.Errorf("expected permissions 0600, got %04o", info.Mode().Perm())
+		}
+	})
+
+	t.Run("path outside allowed directory", func(t *testing.T) {
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":    "/tmp/outside-boundary.txt",
+			"content": "should fail",
+		})
+		if !result.IsError {
+			t.Error("expected error for path outside allowed directory")
+		}
+		if !contains(result.ForLLM, "outside the allowed directory") {
+			t.Errorf("expected boundary error, got: %s", result.ForLLM)
 		}
 	})
 }

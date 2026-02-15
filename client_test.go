@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -389,6 +391,66 @@ func TestResponsesAPIFunctionCall(t *testing.T) {
 		}
 		if resp.FinishReason != "tool_calls" {
 			t.Errorf("expected finish_reason 'tool_calls', got '%s'", resp.FinishReason)
+		}
+	})
+}
+
+func TestClientRetryOn429(t *testing.T) {
+	var callCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n <= 2 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error": {"message": "rate limited"}}`))
+			return
+		}
+		response := map[string]interface{}{
+			"id":      "chatcmpl-retry",
+			"object":  "chat.completion",
+			"created": 1677652288,
+			"model":   "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "Success after retries!",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL, "gpt-4", "chat")
+	messages := []Message{
+		{Role: "user", Content: "Hello"},
+	}
+
+	resp, err := client.Chat(context.Background(), messages, nil)
+	if err != nil {
+		t.Fatalf("expected success after retries, got error: %v", err)
+	}
+	if resp.Content != "Success after retries!" {
+		t.Errorf("expected 'Success after retries!', got '%s'", resp.Content)
+	}
+	if callCount.Load() < 3 {
+		t.Errorf("expected at least 3 calls (2 retries + 1 success), got %d", callCount.Load())
+	}
+}
+
+func TestWrapAPIError(t *testing.T) {
+	t.Run("non-API error", func(t *testing.T) {
+		err := wrapAPIError("test context", context.DeadlineExceeded)
+		if !strings.Contains(err.Error(), "test context") {
+			t.Errorf("expected context in error, got: %v", err)
+		}
+		if strings.Contains(err.Error(), "HTTP") {
+			t.Errorf("non-API error should not contain HTTP status, got: %v", err)
 		}
 	})
 }

@@ -42,29 +42,27 @@ func (t *BashTool) Parameters() map[string]interface{} {
 }
 
 func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	command, ok := args["command"].(string)
-	if !ok {
-		return ErrorResult("command is required")
+	command, err := extractString(args, "command")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	timeout := 120
-	if v, ok := args["timeout"].(float64); ok {
-		if v <= 0 {
-			return ErrorResult("timeout must be a positive number")
-		}
-		timeout = int(v)
+	timeout := extractInt(args, "timeout", 120)
+	if timeout <= 0 {
+		return ErrorResult("timeout must be a positive number")
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "/bin/bash", "-c", command)
+	cmd.Env = sanitizeEnv()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	runErr := cmd.Run()
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		if output != "" {
@@ -73,11 +71,11 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		output += "STDERR:\n" + stderr.String()
 	}
 
-	if err != nil {
+	if runErr != nil {
 		if cmdCtx.Err() == context.DeadlineExceeded {
 			return ErrorResult(fmt.Sprintf("Command timed out after %d seconds", timeout))
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+		output += fmt.Sprintf("\nExit code: %v", runErr)
 	}
 
 	if output == "" {
@@ -87,7 +85,7 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	// Truncate long output
 	output = truncateOutput(output, 10000)
 
-	if err != nil {
+	if runErr != nil {
 		return &ToolResult{
 			ForLLM:  output,
 			ForUser: output,

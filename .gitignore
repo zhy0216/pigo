@@ -12,3 +12,4 @@ pigo
 coverage.out
 .env
 mem.prof
+.DS_Store

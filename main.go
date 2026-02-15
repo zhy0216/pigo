@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strings"
@@ -60,16 +61,27 @@ func NewApp(cfg *Config) *App {
 	client := NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
 	registry := NewToolRegistry()
 
-	registry.Register(NewReadTool())
-	registry.Register(NewWriteTool())
-	registry.Register(NewEditTool())
-	registry.Register(NewBashTool())
-
-	// Load skills
+	// Resolve the working directory for file tool boundary enforcement
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot get working directory: %v\n", err)
 	}
+	allowedDir := ""
+	if cwd != "" {
+		resolved, err := filepath.EvalSymlinks(cwd)
+		if err == nil {
+			allowedDir = resolved
+		} else {
+			allowedDir = cwd
+		}
+	}
+
+	registry.Register(NewReadTool(allowedDir))
+	registry.Register(NewWriteTool(allowedDir))
+	registry.Register(NewEditTool(allowedDir))
+	registry.Register(NewBashTool())
+
+	// Load skills
 	skills, diags := LoadSkills(cwd)
 	for _, d := range diags {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
@@ -125,6 +137,36 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 	return false, false
 }
 
+// truncateMessages trims the message history when it exceeds maxContextChars,
+// keeping the system prompt (index 0) and the most recent minKeepMessages.
+func (a *App) truncateMessages() {
+	if len(a.messages) <= minKeepMessages+1 {
+		return
+	}
+
+	total := estimateMessageChars(a.messages)
+	if total <= maxContextChars {
+		return
+	}
+
+	// Keep system prompt + truncation notice + last minKeepMessages
+	truncated := len(a.messages) - 1 - minKeepMessages // messages being dropped
+	if truncated <= 0 {
+		return
+	}
+
+	kept := make([]Message, 0, minKeepMessages+2)
+	kept = append(kept, a.messages[0]) // system prompt
+	kept = append(kept, Message{
+		Role:    "user",
+		Content: fmt.Sprintf("[%d earlier messages truncated to save context]", truncated),
+	})
+	kept = append(kept, a.messages[len(a.messages)-minKeepMessages:]...)
+
+	a.messages = kept
+	fmt.Fprintf(a.output, "%s[context truncated: %d messages removed]%s\n", colorYellow, truncated, colorReset)
+}
+
 // ProcessInput processes user input and runs the agent loop.
 func (a *App) ProcessInput(ctx context.Context, input string) error {
 	if input == "" {
@@ -136,6 +178,9 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 		Role:    "user",
 		Content: input,
 	})
+
+	// Manage context window
+	a.truncateMessages()
 
 	// Agent loop
 	maxIterations := 10

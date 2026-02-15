@@ -7,7 +7,7 @@ import (
 func TestToolRegistry(t *testing.T) {
 	t.Run("register and get tool", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool())
+		registry.Register(NewReadTool(""))
 
 		tool, ok := registry.Get("read")
 		if !ok {
@@ -28,8 +28,8 @@ func TestToolRegistry(t *testing.T) {
 
 	t.Run("list tools", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool())
-		registry.Register(NewWriteTool())
+		registry.Register(NewReadTool(""))
+		registry.Register(NewWriteTool(""))
 
 		names := registry.List()
 		if len(names) != 2 {
@@ -39,7 +39,7 @@ func TestToolRegistry(t *testing.T) {
 
 	t.Run("get definitions", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool())
+		registry.Register(NewReadTool(""))
 
 		defs := registry.GetDefinitions()
 		if len(defs) != 1 {
@@ -63,9 +63,9 @@ func TestToolRegistry(t *testing.T) {
 
 func TestToolDescriptionAndParameters(t *testing.T) {
 	tools := []Tool{
-		NewReadTool(),
-		NewWriteTool(),
-		NewEditTool(),
+		NewReadTool(""),
+		NewWriteTool(""),
+		NewEditTool(""),
 		NewBashTool(),
 	}
 

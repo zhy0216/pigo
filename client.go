@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -22,6 +23,7 @@ type Client struct {
 func NewClient(apiKey, baseURL, model, apiType string) *Client {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(3),
 	}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
@@ -138,7 +140,7 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []Message, too
 	// Make the API call
 	completion, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("chat completion failed: %w", err)
+		return nil, wrapAPIError("chat completion failed", err)
 	}
 
 	if len(completion.Choices) == 0 {
@@ -264,7 +266,7 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []Message, toolD
 	// Make the API call
 	resp, err := c.client.Responses.New(ctx, reqParams)
 	if err != nil {
-		return nil, fmt.Errorf("responses API call failed: %w", err)
+		return nil, wrapAPIError("responses API call failed", err)
 	}
 
 	// Parse response output
@@ -312,4 +314,14 @@ func GetEnvOrDefault(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+// wrapAPIError wraps an API error with context information, extracting HTTP
+// status codes from openai.Error when available.
+func wrapAPIError(context string, err error) error {
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		return fmt.Errorf("%s: HTTP %d: %w", context, apiErr.StatusCode, err)
+	}
+	return fmt.Errorf("%s: %w", context, err)
 }

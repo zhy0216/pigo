@@ -8,11 +8,13 @@ import (
 )
 
 // WriteTool writes content to a file.
-type WriteTool struct{}
+type WriteTool struct {
+	allowedDir string
+}
 
-// NewWriteTool creates a new WriteTool.
-func NewWriteTool() *WriteTool {
-	return &WriteTool{}
+// NewWriteTool creates a new WriteTool. Files are restricted to allowedDir when non-empty.
+func NewWriteTool(allowedDir string) *WriteTool {
+	return &WriteTool{allowedDir: allowedDir}
 }
 
 func (t *WriteTool) Name() string {
@@ -41,17 +43,17 @@ func (t *WriteTool) Parameters() map[string]interface{} {
 }
 
 func (t *WriteTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	path, ok := args["path"].(string)
-	if !ok {
-		return ErrorResult("path is required")
+	path, err := extractString(args, "path")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	content, ok := args["content"].(string)
-	if !ok {
-		return ErrorResult("content is required")
+	content, err := extractString(args, "content")
+	if err != nil {
+		return ErrorResult(err.Error())
 	}
 
-	resolvedPath, err := validatePath(path)
+	resolvedPath, err := validatePath(path, t.allowedDir)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
