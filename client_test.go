@@ -283,3 +283,112 @@ func TestClientChatEmptyChoices(t *testing.T) {
 		}
 	})
 }
+
+func TestResponsesAPITextResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":     "resp-text-001",
+			"object": "response",
+			"output": []map[string]interface{}{
+				{
+					"type": "message",
+					"role": "assistant",
+					"content": []map[string]interface{}{
+						{
+							"type": "output_text",
+							"text": "Hello from Responses API!",
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	t.Run("text response via responses API", func(t *testing.T) {
+		client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+		messages := []Message{
+			{Role: "system", Content: "You are helpful"},
+			{Role: "user", Content: "Hello"},
+		}
+
+		resp, err := client.Chat(context.Background(), messages, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.Content != "Hello from Responses API!" {
+			t.Errorf("expected 'Hello from Responses API!', got '%s'", resp.Content)
+		}
+		if resp.FinishReason != "stop" {
+			t.Errorf("expected finish_reason 'stop', got '%s'", resp.FinishReason)
+		}
+		if len(resp.ToolCalls) != 0 {
+			t.Errorf("expected 0 tool calls, got %d", len(resp.ToolCalls))
+		}
+	})
+}
+
+func TestResponsesAPIFunctionCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id":     "resp-fc-001",
+			"object": "response",
+			"output": []map[string]interface{}{
+				{
+					"type":      "function_call",
+					"call_id":   "call_resp_456",
+					"name":      "read",
+					"arguments": `{"path": "/tmp/test.txt"}`,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	t.Run("function call via responses API", func(t *testing.T) {
+		client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+		messages := []Message{
+			{Role: "user", Content: "Read /tmp/test.txt"},
+		}
+		toolDefs := []map[string]interface{}{
+			{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        "read",
+					"description": "Read a file",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"path": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+			},
+		}
+
+		resp, err := client.Chat(context.Background(), messages, toolDefs)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(resp.ToolCalls) != 1 {
+			t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+		}
+		tc := resp.ToolCalls[0]
+		if tc.ID != "call_resp_456" {
+			t.Errorf("expected call ID 'call_resp_456', got '%s'", tc.ID)
+		}
+		if tc.Function.Name != "read" {
+			t.Errorf("expected function name 'read', got '%s'", tc.Function.Name)
+		}
+		if tc.Function.Arguments != `{"path": "/tmp/test.txt"}` {
+			t.Errorf("unexpected arguments: %s", tc.Function.Arguments)
+		}
+		if resp.FinishReason != "tool_calls" {
+			t.Errorf("expected finish_reason 'tool_calls', got '%s'", resp.FinishReason)
+		}
+	})
+}

@@ -66,7 +66,10 @@ func NewApp(cfg *Config) *App {
 	registry.Register(NewBashTool())
 
 	// Load skills
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot get working directory: %v\n", err)
+	}
 	skills, diags := LoadSkills(cwd)
 	for _, d := range diags {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
@@ -135,7 +138,9 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	})
 
 	// Agent loop
-	for iterations := 0; iterations < 10; iterations++ {
+	maxIterations := 10
+	completed := false
+	for iterations := 0; iterations < maxIterations; iterations++ {
 		response, err := a.client.Chat(ctx, a.messages, a.registry.GetDefinitions())
 		if err != nil {
 			return fmt.Errorf("chat error: %w", err)
@@ -228,7 +233,12 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 			Role:    "assistant",
 			Content: response.Content,
 		})
+		completed = true
 		break
+	}
+
+	if !completed {
+		return fmt.Errorf("agent loop reached maximum iterations (%d) without completing", maxIterations)
 	}
 
 	return nil

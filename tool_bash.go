@@ -49,6 +49,9 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	timeout := 120
 	if v, ok := args["timeout"].(float64); ok {
+		if v <= 0 {
+			return ErrorResult("timeout must be a positive number")
+		}
 		timeout = int(v)
 	}
 

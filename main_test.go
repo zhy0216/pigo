@@ -337,10 +337,13 @@ func TestAppProcessInputWithInvalidToolArgs(t *testing.T) {
 	app := NewApp(cfg)
 	app.output = &bytes.Buffer{}
 
-	// Should handle invalid JSON gracefully
+	// Should handle invalid JSON gracefully but hit max iterations since mock always returns tool calls
 	err := app.ProcessInput(context.Background(), "test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for max iterations, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum iterations") {
+		t.Fatalf("expected max iterations error, got: %v", err)
 	}
 }
 
