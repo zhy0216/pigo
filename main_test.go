@@ -115,6 +115,45 @@ func TestAppHandleCommand(t *testing.T) {
 			t.Error("expected handled=false, exit=false for regular input")
 		}
 	})
+
+	t.Run("skills command no skills", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		app.output = buf
+		app.skills = nil
+		handled, exit := app.HandleCommand("/skills")
+		if !handled || exit {
+			t.Error("expected handled=true, exit=false for /skills")
+		}
+		if !bytes.Contains(buf.Bytes(), []byte("No skills loaded")) {
+			t.Errorf("expected 'No skills loaded' in output, got: %s", buf.String())
+		}
+	})
+
+	t.Run("skills command with skills", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		app.output = buf
+		app.skills = []Skill{
+			{Name: "greet", Description: "A greeting skill", Source: "user", FilePath: "/tmp/greet/SKILL.md"},
+		}
+		handled, exit := app.HandleCommand("/skills")
+		if !handled || exit {
+			t.Error("expected handled=true, exit=false for /skills")
+		}
+		out := buf.String()
+		if !bytes.Contains(buf.Bytes(), []byte("/skill:greet")) {
+			t.Errorf("expected '/skill:greet' in output, got: %s", out)
+		}
+		if !bytes.Contains(buf.Bytes(), []byte("[user]")) {
+			t.Errorf("expected '[user]' in output, got: %s", out)
+		}
+	})
+
+	t.Run("skill colon command not handled", func(t *testing.T) {
+		handled, exit := app.HandleCommand("/skill:greet say hi")
+		if handled || exit {
+			t.Error("expected handled=false, exit=false for /skill:name (should flow to ProcessInput)")
+		}
+	})
 }
 
 func TestAppProcessInput(t *testing.T) {

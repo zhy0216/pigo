@@ -51,6 +51,7 @@ type App struct {
 	registry *ToolRegistry
 	messages []Message
 	output   io.Writer
+	skills   []Skill
 }
 
 // NewApp creates a new App instance.
@@ -63,16 +64,27 @@ func NewApp(cfg *Config) *App {
 	registry.Register(NewEditTool())
 	registry.Register(NewBashTool())
 
-	messages := []Message{
-		{
-			Role: "system",
-			Content: `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
+	// Load skills
+	cwd, _ := os.Getwd()
+	skills, diags := LoadSkills(cwd)
+	for _, d := range diags {
+		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
+	}
+
+	systemPrompt := `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
 
 When helping with coding tasks:
 1. Read files before modifying them
 2. Make targeted edits rather than rewriting entire files
 3. Test your changes when possible
-4. Be concise in your explanations`,
+4. Be concise in your explanations`
+
+	systemPrompt += formatSkillsForPrompt(skills)
+
+	messages := []Message{
+		{
+			Role:    "system",
+			Content: systemPrompt,
 		},
 	}
 
@@ -81,6 +93,7 @@ When helping with coding tasks:
 		registry: registry,
 		messages: messages,
 		output:   os.Stdout,
+		skills:   skills,
 	}
 }
 
@@ -93,6 +106,16 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 	case "/c", "clear":
 		a.messages = a.messages[:1]
 		fmt.Fprintln(a.output, "Conversation cleared.")
+		return true, false
+	case "/skills":
+		if len(a.skills) == 0 {
+			fmt.Fprintln(a.output, "No skills loaded.")
+		} else {
+			fmt.Fprintln(a.output, "Loaded skills:")
+			for _, s := range a.skills {
+				fmt.Fprintf(a.output, "  /skill:%s - %s [%s] (%s)\n", s.Name, s.Description, s.Source, s.FilePath)
+			}
+		}
 		return true, false
 	}
 	return false, false
@@ -214,7 +237,15 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear)\n\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /skills\n")
+	if len(app.skills) > 0 {
+		var skillNames []string
+		for _, s := range app.skills {
+			skillNames = append(skillNames, "/skill:"+s.Name)
+		}
+		fmt.Printf("Skills: %s\n", strings.Join(skillNames, ", "))
+	}
+	fmt.Println()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -247,6 +278,17 @@ func main() {
 		}
 		if handled {
 			continue
+		}
+
+		// Expand skill commands
+		if expanded, ok := expandSkillCommand(input, app.skills); ok {
+			// Extract skill name for indicator
+			name := strings.TrimPrefix(input, "/skill:")
+			if idx := strings.Index(name, " "); idx >= 0 {
+				name = name[:idx]
+			}
+			fmt.Printf("%s[skill: %s]%s\n", colorGray, name, colorReset)
+			input = expanded
 		}
 
 		if err := app.ProcessInput(ctx, input); err != nil {
