@@ -11,3 +11,4 @@ pigo
 *.test
 coverage.out
 .env
+mem.prof
