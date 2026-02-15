@@ -111,4 +111,31 @@ func TestEditTool(t *testing.T) {
 			t.Error("expected error for missing new_string")
 		}
 	})
+
+	t.Run("preserves file permissions", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "edit_perm.txt")
+		os.WriteFile(testFile, []byte("secret data"), 0600)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"old_string": "secret",
+			"new_string": "public",
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", result.ForLLM)
+		}
+
+		info, err := os.Stat(testFile)
+		if err != nil {
+			t.Fatalf("failed to stat file: %v", err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("expected permissions 0600, got %04o", info.Mode().Perm())
+		}
+
+		content, _ := os.ReadFile(testFile)
+		if string(content) != "public data" {
+			t.Errorf("expected 'public data', got '%s'", string(content))
+		}
+	})
 }
