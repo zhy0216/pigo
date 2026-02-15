@@ -109,6 +109,7 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []Message, too
 	for _, def := range toolDefs {
 		fn, ok := def["function"].(map[string]interface{})
 		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: skipping malformed tool definition (missing 'function' key)\n")
 			continue
 		}
 		name, _ := fn["name"].(string)
@@ -230,6 +231,7 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []Message, toolD
 	for _, def := range toolDefs {
 		fn, ok := def["function"].(map[string]interface{})
 		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: skipping malformed tool definition (missing 'function' key)\n")
 			continue
 		}
 		name, _ := fn["name"].(string)

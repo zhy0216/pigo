@@ -87,4 +87,25 @@ func TestWriteTool(t *testing.T) {
 			t.Error("expected error for missing content")
 		}
 	})
+
+	t.Run("preserves existing file permissions on overwrite", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "restricted.txt")
+		os.WriteFile(testFile, []byte("old"), 0600)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":    testFile,
+			"content": "new",
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", result.ForLLM)
+		}
+
+		info, err := os.Stat(testFile)
+		if err != nil {
+			t.Fatalf("failed to stat: %v", err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("expected permissions 0600, got %04o", info.Mode().Perm())
+		}
+	})
 }

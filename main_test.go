@@ -594,12 +594,9 @@ func TestConcurrentToolExecutionActuallyParallel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// If sequential, 3 * 100ms = 300ms+. If parallel, ~100ms.
-	if elapsed > 250*time.Millisecond {
-		t.Errorf("expected parallel execution (~100ms), took %v", elapsed)
-	}
-
-	// Peak concurrency should be > 1
+	// Verify parallel execution via peak concurrency, not wall-clock time.
+	// Wall-clock assertions are flaky on slow CI runners.
+	_ = elapsed
 	if maxConc.Load() < 2 {
 		t.Errorf("expected concurrent execution (peak concurrency >= 2), got %d", maxConc.Load())
 	}

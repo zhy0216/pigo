@@ -299,7 +299,6 @@ func main() {
 		<-sigChan
 		fmt.Println("\nGoodbye!")
 		cancel()
-		os.Exit(0)
 	}()
 
 	reader := bufio.NewReader(os.Stdin)
@@ -307,6 +306,9 @@ func main() {
 		fmt.Printf("%s> %s", colorBlue, colorReset)
 		input, err := reader.ReadString('\n')
 		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
 			break
 		}
 		input = strings.TrimSpace(input)

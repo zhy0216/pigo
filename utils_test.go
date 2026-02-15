@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -79,6 +81,33 @@ func TestValidatePath(t *testing.T) {
 		}
 		if result != "/absolute/path" {
 			t.Errorf("expected '/absolute/path', got '%s'", result)
+		}
+	})
+
+	t.Run("resolves symlinks", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realFile := filepath.Join(tmpDir, "real.txt")
+		os.WriteFile(realFile, []byte("content"), 0644)
+
+		linkFile := filepath.Join(tmpDir, "link.txt")
+		os.Symlink(realFile, linkFile)
+
+		result, err := validatePath(linkFile)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != realFile {
+			t.Errorf("expected resolved path '%s', got '%s'", realFile, result)
+		}
+	})
+
+	t.Run("nonexistent path returns cleaned path", func(t *testing.T) {
+		result, err := validatePath("/tmp/nonexistent/file.txt")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if result != "/tmp/nonexistent/file.txt" {
+			t.Errorf("expected '/tmp/nonexistent/file.txt', got '%s'", result)
 		}
 	})
 }

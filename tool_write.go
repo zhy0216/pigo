@@ -62,7 +62,13 @@ func (t *WriteTool) Execute(ctx context.Context, args map[string]interface{}) *T
 		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
 	}
 
-	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
+	// Preserve permissions if file already exists, otherwise use 0644
+	perm := os.FileMode(0644)
+	if info, err := os.Stat(resolvedPath); err == nil {
+		perm = info.Mode().Perm()
+	}
+
+	if err := os.WriteFile(resolvedPath, []byte(content), perm); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 

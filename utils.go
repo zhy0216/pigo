@@ -3,11 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// validatePath ensures the path is absolute and clean.
+// validatePath ensures the path is absolute, clean, and resolves symlinks.
 func validatePath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
@@ -18,7 +19,18 @@ func validatePath(path string) (string, error) {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	return filepath.Clean(absPath), nil
+	cleaned := filepath.Clean(absPath)
+
+	// Resolve symlinks if the path exists, to prevent symlink traversal
+	if _, err := os.Lstat(cleaned); err == nil {
+		resolved, err := filepath.EvalSymlinks(cleaned)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve symlinks: %w", err)
+		}
+		return resolved, nil
+	}
+
+	return cleaned, nil
 }
 
 // formatWithLineNumbers adds line numbers to content (like cat -n).
