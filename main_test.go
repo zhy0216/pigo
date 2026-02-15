@@ -466,14 +466,14 @@ func TestAppProcessInputConcurrentToolCalls(t *testing.T) {
 
 // slowTool is a test tool that sleeps for a given duration.
 type slowTool struct {
-	name     string
-	delay    time.Duration
-	running  *atomic.Int32
-	maxConc  *atomic.Int32
+	name    string
+	delay   time.Duration
+	running *atomic.Int32
+	maxConc *atomic.Int32
 }
 
 func (s *slowTool) Name() string        { return s.name }
-func (s *slowTool) Description() string  { return "slow tool for testing" }
+func (s *slowTool) Description() string { return "slow tool for testing" }
 func (s *slowTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type":       "object",
