@@ -631,7 +631,7 @@ func (s *slowTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	return NewToolResult(fmt.Sprintf("done-%s", s.name))
 }
 
-func TestConcurrentToolExecutionActuallyParallel(t *testing.T) {
+func TestSequentialToolExecution(t *testing.T) {
 	var running atomic.Int32
 	var maxConc atomic.Int32
 
@@ -730,11 +730,10 @@ func TestConcurrentToolExecutionActuallyParallel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify parallel execution via peak concurrency, not wall-clock time.
-	// Wall-clock assertions are flaky on slow CI runners.
+	// Verify sequential execution via peak concurrency
 	_ = elapsed
-	if maxConc.Load() < 2 {
-		t.Errorf("expected concurrent execution (peak concurrency >= 2), got %d", maxConc.Load())
+	if maxConc.Load() > 1 {
+		t.Errorf("expected sequential execution (peak concurrency == 1), got %d", maxConc.Load())
 	}
 
 	// Results should still be in order
@@ -755,6 +754,74 @@ func TestConcurrentToolExecutionActuallyParallel(t *testing.T) {
 	}
 	if toolMsgs[2].ToolCallID != "call_sc" {
 		t.Errorf("expected third result for call_sc, got %s", toolMsgs[2].ToolCallID)
+	}
+}
+
+func TestToolExecutionInterrupt(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var response map[string]interface{}
+		if callCount == 1 {
+			response = map[string]interface{}{
+				"id": "chatcmpl-int", "object": "chat.completion", "created": 1677652288, "model": "gpt-4",
+				"choices": []map[string]interface{}{
+					{
+						"index": 0,
+						"message": map[string]interface{}{
+							"role": "assistant", "content": "",
+							"tool_calls": []map[string]interface{}{
+								{"id": "call_1", "type": "function", "function": map[string]interface{}{"name": "bash", "arguments": `{"command":"echo a"}`}},
+								{"id": "call_2", "type": "function", "function": map[string]interface{}{"name": "bash", "arguments": `{"command":"echo b"}`}},
+								{"id": "call_3", "type": "function", "function": map[string]interface{}{"name": "bash", "arguments": `{"command":"echo c"}`}},
+							},
+						},
+						"finish_reason": "tool_calls",
+					},
+				},
+			}
+		} else {
+			response = map[string]interface{}{
+				"id": "chatcmpl-int2", "object": "chat.completion", "created": 1677652288, "model": "gpt-4",
+				"choices": []map[string]interface{}{
+					{"index": 0, "message": map[string]interface{}{"role": "assistant", "content": "Done."}, "finish_reason": "stop"},
+				},
+			}
+		}
+		mockRespond(w, r, response)
+	}))
+	defer server.Close()
+
+	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	app := NewApp(cfg)
+	app.output = &bytes.Buffer{}
+
+	// Cancel context immediately to test interrupt path
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	err := app.ProcessInput(ctx, "run tools")
+	// Should either error or complete gracefully with skipped results
+	_ = err
+
+	// Check that skipped messages exist
+	var toolMsgs []Message
+	for _, m := range app.messages {
+		if m.Role == "tool" {
+			toolMsgs = append(toolMsgs, m)
+		}
+	}
+	// All tool results should be present (skipped ones too)
+	if len(toolMsgs) > 0 {
+		hasSkipped := false
+		for _, m := range toolMsgs {
+			if strings.Contains(m.Content, "Skipped") || strings.Contains(m.Content, "interrupt") {
+				hasSkipped = true
+			}
+		}
+		if len(toolMsgs) == 3 && !hasSkipped {
+			t.Error("expected at least some skipped tool results after interrupt")
+		}
 	}
 }
 

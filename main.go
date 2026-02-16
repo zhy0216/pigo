@@ -207,59 +207,65 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 				fmt.Fprintf(a.output, "%s[%s]%s ", colorGray, tc.Function.Name, colorReset)
 			}
 
-			// Execute tool calls concurrently
+			// Execute tool calls sequentially with interrupt checks
 			type toolCallResult struct {
 				msg    Message
 				output string
 			}
 			results := make([]toolCallResult, len(response.ToolCalls))
-			var wg sync.WaitGroup
 
 			for i, tc := range response.ToolCalls {
-				wg.Add(1)
-				go func(i int, tc ToolCall) {
-					defer wg.Done()
-
-					var args map[string]interface{}
-					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-						result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-						results[i] = toolCallResult{
+				// Check for interruption between tool calls
+				if ctx.Err() != nil {
+					for j := i; j < len(response.ToolCalls); j++ {
+						results[j] = toolCallResult{
 							msg: Message{
 								Role:       "tool",
-								Content:    result.ForLLM,
-								ToolCallID: tc.ID,
+								Content:    "Skipped due to user interrupt",
+								ToolCallID: response.ToolCalls[j].ID,
 							},
 						}
-						return
 					}
+					break
+				}
 
-					result := a.registry.Execute(ctx, tc.Function.Name, args)
-
-					var buf strings.Builder
-					if !result.Silent && result.ForUser != "" {
-						lines := strings.Split(result.ForUser, "\n")
-						if len(lines) > 20 {
-							for _, line := range lines[:20] {
-								fmt.Fprintln(&buf, line)
-							}
-							fmt.Fprintf(&buf, "... (%d more lines)\n", len(lines)-20)
-						} else {
-							fmt.Fprintln(&buf, result.ForUser)
-						}
-					}
-
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+					result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
 					results[i] = toolCallResult{
 						msg: Message{
 							Role:       "tool",
 							Content:    result.ForLLM,
 							ToolCallID: tc.ID,
 						},
-						output: buf.String(),
 					}
-				}(i, tc)
-			}
+					continue
+				}
 
-			wg.Wait()
+				result := a.registry.Execute(ctx, tc.Function.Name, args)
+
+				var buf strings.Builder
+				if !result.Silent && result.ForUser != "" {
+					lines := strings.Split(result.ForUser, "\n")
+					if len(lines) > 20 {
+						for _, line := range lines[:20] {
+							fmt.Fprintln(&buf, line)
+						}
+						fmt.Fprintf(&buf, "... (%d more lines)\n", len(lines)-20)
+					} else {
+						fmt.Fprintln(&buf, result.ForUser)
+					}
+				}
+
+				results[i] = toolCallResult{
+					msg: Message{
+						Role:       "tool",
+						Content:    result.ForLLM,
+						ToolCallID: tc.ID,
+					},
+					output: buf.String(),
+				}
+			}
 
 			// Print outputs and collect messages in order
 			for _, r := range results {
