@@ -982,3 +982,122 @@ func TestTruncateMessages(t *testing.T) {
 		t.Error("expected truncation notice as second message")
 	}
 }
+
+func TestProcessInputContextOverflowRetry(t *testing.T) {
+	streamCallCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isStreamingRequest(r) {
+			// Non-streaming calls (e.g. compaction summarization) - return success
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id": "chatcmpl-sum", "object": "chat.completion",
+				"created": 1677652288, "model": "gpt-4",
+				"choices": []map[string]interface{}{
+					{
+						"index": 0,
+						"message": map[string]interface{}{
+							"role":    "assistant",
+							"content": "summary of earlier conversation",
+						},
+						"finish_reason": "stop",
+					},
+				},
+			})
+			return
+		}
+
+		streamCallCount++
+		if streamCallCount == 1 {
+			// First streaming call: return context overflow error
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "This model's maximum context length is 8192 tokens. However, your messages resulted in 10000 tokens.",
+					"type":    "invalid_request_error",
+					"code":    "context_length_exceeded",
+				},
+			})
+			return
+		}
+		// Subsequent streaming calls: return success
+		response := map[string]interface{}{
+			"id": "chatcmpl-retry", "object": "chat.completion",
+			"created": 1677652288, "model": "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "After compaction!",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		writeSSEResponse(w, response)
+	}))
+	defer server.Close()
+
+	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	app := NewApp(cfg)
+	output := &bytes.Buffer{}
+	app.output = output
+
+	// Add small messages so compactMessages is a no-op but we still have
+	// something to truncate when the overflow retry triggers truncateMessages
+	for i := 0; i < 15; i++ {
+		app.messages = append(app.messages, Message{
+			Role:    "user",
+			Content: fmt.Sprintf("msg %d: short message", i),
+		})
+	}
+
+	err := app.ProcessInput(context.Background(), "test retry")
+	if err != nil {
+		t.Fatalf("expected success after retry, got: %v", err)
+	}
+
+	// Should have retried
+	if streamCallCount < 2 {
+		t.Errorf("expected at least 2 streaming API calls (overflow + retry), got %d", streamCallCount)
+	}
+
+	// Output should mention compaction
+	if !strings.Contains(output.String(), "context overflow") {
+		t.Errorf("expected overflow message in output, got: %s", output.String())
+	}
+
+	// Should have received the retried response
+	if !strings.Contains(output.String(), "After compaction!") {
+		t.Errorf("expected retried response in output, got: %s", output.String())
+	}
+}
+
+func TestProcessInputContextOverflowMaxRetries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Always return context overflow
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]interface{}{
+				"message": "This model's maximum context length is 8192 tokens.",
+				"type":    "invalid_request_error",
+				"code":    "context_length_exceeded",
+			},
+		})
+	}))
+	defer server.Close()
+
+	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	app := NewApp(cfg)
+	app.output = &bytes.Buffer{}
+
+	err := app.ProcessInput(context.Background(), "test max retries")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if !strings.Contains(err.Error(), "chat error") {
+		t.Errorf("expected chat error, got: %v", err)
+	}
+}

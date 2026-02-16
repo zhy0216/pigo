@@ -203,9 +203,24 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	for iterations := 0; iterations < maxIterations; iterations++ {
 		a.events.Emit(AgentEvent{Type: EventTurnStart})
 
-		response, err := a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
-		if err != nil {
-			agentErr = fmt.Errorf("chat error: %w", err)
+		// Retry loop for context overflow errors
+		var response *ChatResponse
+		var chatErr error
+		for retries := 0; retries <= maxOverflowRetries; retries++ {
+			response, chatErr = a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
+			if chatErr == nil {
+				break
+			}
+			if !isContextOverflow(chatErr) || retries == maxOverflowRetries {
+				break
+			}
+			// Context overflow: force truncation and retry
+			fmt.Fprintf(a.output, "%s[context overflow, compacting and retrying...]%s\n", colorYellow, colorReset)
+			a.truncateMessages()
+		}
+
+		if chatErr != nil {
+			agentErr = fmt.Errorf("chat error: %w", chatErr)
 			a.events.Emit(AgentEvent{Type: EventTurnEnd, Error: agentErr})
 			break
 		}

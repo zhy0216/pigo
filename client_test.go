@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -451,6 +452,121 @@ func TestWrapAPIError(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "HTTP") {
 			t.Errorf("non-API error should not contain HTTP status, got: %v", err)
+		}
+	})
+}
+
+func TestIsContextOverflow(t *testing.T) {
+	t.Run("nil error", func(t *testing.T) {
+		if isContextOverflow(nil) {
+			t.Error("expected false for nil error")
+		}
+	})
+
+	t.Run("non-API error", func(t *testing.T) {
+		if isContextOverflow(fmt.Errorf("some error")) {
+			t.Error("expected false for non-API error")
+		}
+	})
+
+	t.Run("API error wrong status", func(t *testing.T) {
+		// Create a mock server that returns 500
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(500)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "context length exceeded",
+					"type":    "server_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		_, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+		if isContextOverflow(err) {
+			t.Error("expected false for 500 error")
+		}
+	})
+
+	t.Run("context overflow 400", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "This model's maximum context length is 8192 tokens. However, your messages resulted in 10000 tokens.",
+					"type":    "invalid_request_error",
+					"code":    "context_length_exceeded",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		_, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+		if !isContextOverflow(err) {
+			t.Errorf("expected true for context length exceeded, got false. Error: %v", err)
+		}
+	})
+
+	t.Run("context window exceeded", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "Your input exceeds the context window of this model",
+					"type":    "invalid_request_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		_, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+		if !isContextOverflow(err) {
+			t.Errorf("expected true for context window exceeded, got false. Error: %v", err)
+		}
+	})
+
+	t.Run("too many tokens", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "Too many tokens in the request",
+					"type":    "invalid_request_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		_, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+		if !isContextOverflow(err) {
+			t.Errorf("expected true for too many tokens, got false. Error: %v", err)
+		}
+	})
+
+	t.Run("unrelated 400 error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "Invalid model specified",
+					"type":    "invalid_request_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		_, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+		if isContextOverflow(err) {
+			t.Error("expected false for unrelated 400 error")
 		}
 	})
 }

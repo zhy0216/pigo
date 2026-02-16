@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -593,4 +594,33 @@ func wrapAPIError(context string, err error) error {
 		return fmt.Errorf("%s: HTTP %d: %w", context, apiErr.StatusCode, err)
 	}
 	return fmt.Errorf("%s: %w", context, err)
+}
+
+// maxOverflowRetries is the number of times to retry after context overflow.
+const maxOverflowRetries = 2
+
+// isContextOverflow checks if an error indicates that the request exceeded
+// the model's context window. It looks for HTTP 400/413 status codes combined
+// with known error message patterns from various providers.
+func isContextOverflow(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *openai.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode != 400 && apiErr.StatusCode != 413 {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context length") ||
+		strings.Contains(msg, "context window") ||
+		strings.Contains(msg, "too many tokens") ||
+		strings.Contains(msg, "token limit") ||
+		strings.Contains(msg, "prompt is too long") ||
+		strings.Contains(msg, "maximum prompt length") ||
+		strings.Contains(msg, "reduce the length") ||
+		strings.Contains(msg, "input token count") ||
+		(strings.Contains(msg, "maximum") && strings.Contains(msg, "token"))
 }
