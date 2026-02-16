@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 const (
@@ -337,15 +338,36 @@ func main() {
 	}
 	fmt.Println()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Per-turn cancellation: first Ctrl+C cancels the current turn,
+	// second Ctrl+C within 1 second exits the process.
+	var turnCancel context.CancelFunc
+	var lastSigTime time.Time
+	var mu sync.Mutex
+
 	go func() {
-		<-sigChan
-		fmt.Println("\nGoodbye!")
-		cancel()
+		for sig := range sigChan {
+			if sig == syscall.SIGTERM {
+				fmt.Println("\nGoodbye!")
+				os.Exit(0)
+			}
+			mu.Lock()
+			now := time.Now()
+			if now.Sub(lastSigTime) < time.Second {
+				mu.Unlock()
+				fmt.Println("\nGoodbye!")
+				os.Exit(0)
+			}
+			lastSigTime = now
+			if turnCancel != nil {
+				turnCancel()
+				turnCancel = nil
+				fmt.Fprintf(os.Stderr, "\n%s[interrupted]%s\n", colorYellow, colorReset)
+			}
+			mu.Unlock()
+		}
 	}()
 
 	reader := bufio.NewReader(os.Stdin)
@@ -353,9 +375,6 @@ func main() {
 		fmt.Printf("%s> %s", colorBlue, colorReset)
 		input, err := reader.ReadString('\n')
 		if err != nil {
-			if ctx.Err() != nil {
-				break
-			}
 			break
 		}
 		input = strings.TrimSpace(input)
@@ -383,7 +402,24 @@ func main() {
 			input = expanded
 		}
 
-		if err := app.ProcessInput(ctx, input); err != nil {
+		// Create per-turn context
+		turnCtx, cancel := context.WithCancel(context.Background())
+		mu.Lock()
+		turnCancel = cancel
+		mu.Unlock()
+
+		err = app.ProcessInput(turnCtx, input)
+		cancel()
+
+		mu.Lock()
+		turnCancel = nil
+		mu.Unlock()
+
+		if err != nil {
+			if turnCtx.Err() == context.Canceled {
+				// Turn was interrupted, return to prompt
+				continue
+			}
 			fmt.Printf("%sError: %v%s\n", colorYellow, err, colorReset)
 		}
 	}
