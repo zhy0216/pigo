@@ -611,6 +611,11 @@ func (c *Client) GetModel() string {
 	return c.model
 }
 
+// SetModel changes the model used for subsequent requests.
+func (c *Client) SetModel(model string) {
+	c.model = model
+}
+
 // GetEnvOrDefault returns environment variable or default value.
 func GetEnvOrDefault(key, defaultValue string) string {
 	if v := os.Getenv(key); v != "" {

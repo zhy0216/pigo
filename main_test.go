@@ -1197,3 +1197,50 @@ func TestQuitShowsUsage(t *testing.T) {
 		t.Errorf("expected Goodbye in output, got: %s", output)
 	}
 }
+
+func TestModelCommand(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	app := NewApp(cfg)
+	buf := &bytes.Buffer{}
+	app.output = buf
+
+	// Show current model
+	handled, exit := app.HandleCommand("/model")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /model")
+	}
+	if !strings.Contains(buf.String(), "gpt-4") {
+		t.Errorf("expected current model in output, got: %s", buf.String())
+	}
+
+	// Change model
+	buf.Reset()
+	handled, exit = app.HandleCommand("/model gpt-4o-mini")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /model change")
+	}
+	if !strings.Contains(buf.String(), "gpt-4o-mini") {
+		t.Errorf("expected new model in output, got: %s", buf.String())
+	}
+	if app.GetModel() != "gpt-4o-mini" {
+		t.Errorf("expected model to be changed to gpt-4o-mini, got: %s", app.GetModel())
+	}
+
+	// Verify current model after change
+	buf.Reset()
+	app.HandleCommand("/model")
+	if !strings.Contains(buf.String(), "gpt-4o-mini") {
+		t.Errorf("expected gpt-4o-mini, got: %s", buf.String())
+	}
+}
+
+func TestSetModel(t *testing.T) {
+	client := NewClient("test-key", "", "gpt-4", "chat")
+	if client.GetModel() != "gpt-4" {
+		t.Errorf("expected gpt-4, got %s", client.GetModel())
+	}
+	client.SetModel("gpt-3.5-turbo")
+	if client.GetModel() != "gpt-3.5-turbo" {
+		t.Errorf("expected gpt-3.5-turbo, got %s", client.GetModel())
+	}
+}

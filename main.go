@@ -208,6 +208,16 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 		fmt.Fprintf(a.output, "Session loaded: %s (%d messages)\n", name, len(loaded))
 		return true, false
 	}
+	if input == "/model" || strings.HasPrefix(input, "/model ") {
+		newModel := strings.TrimSpace(strings.TrimPrefix(input, "/model"))
+		if newModel == "" {
+			fmt.Fprintf(a.output, "Current model: %s\n", a.client.GetModel())
+		} else {
+			a.client.SetModel(newModel)
+			fmt.Fprintf(a.output, "Model changed to: %s\n", newModel)
+		}
+		return true, false
+	}
 
 	return false, false
 }
@@ -447,7 +457,7 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear), /usage, /save, /load, /sessions, /skills\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills\n")
 	if len(app.skills) > 0 {
 		var skillNames []string
 		for _, s := range app.skills {
