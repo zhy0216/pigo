@@ -150,6 +150,22 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 				u.PromptTokens, u.CompletionTokens, u.TotalTokens)
 		}
 		return true, false
+	case "/sessions":
+		sessions, err := ListSessions()
+		if err != nil {
+			fmt.Fprintf(a.output, "Error listing sessions: %v\n", err)
+			return true, false
+		}
+		if len(sessions) == 0 {
+			fmt.Fprintln(a.output, "No saved sessions.")
+		} else {
+			fmt.Fprintln(a.output, "Saved sessions:")
+			for _, s := range sessions {
+				fmt.Fprintf(a.output, "  %s  (%d messages, %s)\n",
+					s.ID, s.Messages, s.ModTime.Format("2006-01-02 15:04"))
+			}
+		}
+		return true, false
 	case "/skills":
 		if len(a.skills) == 0 {
 			fmt.Fprintln(a.output, "No skills loaded.")
@@ -161,6 +177,38 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 		}
 		return true, false
 	}
+
+	// Commands with arguments
+	if input == "/save" || strings.HasPrefix(input, "/save ") {
+		name := strings.TrimPrefix(input, "/save")
+		name = strings.TrimSpace(name)
+		if name == "" {
+			name = SessionID()
+		}
+		if err := SaveSession(name, a.messages); err != nil {
+			fmt.Fprintf(a.output, "Error saving session: %v\n", err)
+		} else {
+			fmt.Fprintf(a.output, "Session saved: %s\n", name)
+		}
+		return true, false
+	}
+	if strings.HasPrefix(input, "/load ") {
+		name := strings.TrimSpace(strings.TrimPrefix(input, "/load"))
+		if name == "" {
+			fmt.Fprintln(a.output, "Usage: /load <session-id>")
+			return true, false
+		}
+		loaded, err := LoadSession(name)
+		if err != nil {
+			fmt.Fprintf(a.output, "Error loading session: %v\n", err)
+			return true, false
+		}
+		// Keep system prompt, replace rest with loaded messages
+		a.messages = append(a.messages[:1], loaded...)
+		fmt.Fprintf(a.output, "Session loaded: %s (%d messages)\n", name, len(loaded))
+		return true, false
+	}
+
 	return false, false
 }
 
@@ -399,7 +447,7 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear), /usage, /skills\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /usage, /save, /load, /sessions, /skills\n")
 	if len(app.skills) > 0 {
 		var skillNames []string
 		for _, s := range app.skills {
