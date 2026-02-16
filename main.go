@@ -183,7 +183,7 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	})
 
 	// Manage context window
-	a.truncateMessages()
+	a.compactMessages(ctx)
 
 	// Agent loop
 	maxIterations := 10

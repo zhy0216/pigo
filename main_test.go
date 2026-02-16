@@ -134,14 +134,15 @@ func writeSSEResponse(w http.ResponseWriter, response map[string]interface{}) {
 	}
 }
 
-// isStreamingRequest checks if the request body contains "stream":true.
+// isStreamingRequest checks if the request body contains stream:true.
 func isStreamingRequest(r *http.Request) bool {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return false
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
-	return bytes.Contains(body, []byte(`"stream":true`))
+	// Match both "stream":true and "stream": true
+	return bytes.Contains(body, []byte(`"stream":true`)) || bytes.Contains(body, []byte(`"stream": true`))
 }
 
 // mockRespond writes the response as SSE if streaming, or JSON otherwise.
@@ -880,33 +881,7 @@ func TestConcurrentToolCallsWithMixedErrors(t *testing.T) {
 }
 
 func TestTruncateMessages(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := map[string]interface{}{
-			"id":      "chatcmpl-trunc",
-			"object":  "chat.completion",
-			"created": 1677652288,
-			"model":   "gpt-4",
-			"choices": []map[string]interface{}{
-				{
-					"index": 0,
-					"message": map[string]interface{}{
-						"role":    "assistant",
-						"content": "OK",
-					},
-					"finish_reason": "stop",
-				},
-			},
-		}
-		mockRespond(w, r, response)
-	}))
-	defer server.Close()
-
-	cfg := &Config{
-		APIKey:  "test-key",
-		BaseURL: server.URL,
-		Model:   "gpt-4",
-	}
-
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
 	app := NewApp(cfg)
 	output := &bytes.Buffer{}
 	app.output = output
@@ -920,10 +895,8 @@ func TestTruncateMessages(t *testing.T) {
 		})
 	}
 
-	err := app.ProcessInput(context.Background(), "trigger truncation")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	// Test the truncateMessages fallback directly
+	app.truncateMessages()
 
 	// Verify truncation happened
 	outputStr := output.String()
