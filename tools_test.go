@@ -95,3 +95,131 @@ func TestToolDescriptionAndParameters(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateArgs(t *testing.T) {
+	params := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name":  map[string]interface{}{"type": "string"},
+			"count": map[string]interface{}{"type": "integer"},
+			"ratio": map[string]interface{}{"type": "number"},
+			"flag":  map[string]interface{}{"type": "boolean"},
+		},
+		"required": []string{"name"},
+	}
+
+	t.Run("valid args", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name":  "test",
+			"count": float64(5),
+			"ratio": float64(1.5),
+			"flag":  true,
+		})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("missing required field", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"count": float64(5),
+		})
+		if err == nil {
+			t.Error("expected error for missing required field")
+		}
+		if !contains(err.Error(), "name") {
+			t.Errorf("error should mention 'name', got: %v", err)
+		}
+	})
+
+	t.Run("wrong type string", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name": 42.0,
+		})
+		if err == nil {
+			t.Error("expected error for wrong type")
+		}
+	})
+
+	t.Run("wrong type integer", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name":  "test",
+			"count": "not a number",
+		})
+		if err == nil {
+			t.Error("expected error for wrong type")
+		}
+	})
+
+	t.Run("float as integer fails", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name":  "test",
+			"count": float64(3.7),
+		})
+		if err == nil {
+			t.Error("expected error for non-whole float as integer")
+		}
+	})
+
+	t.Run("wrong type boolean", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name": "test",
+			"flag": "true",
+		})
+		if err == nil {
+			t.Error("expected error for string as boolean")
+		}
+	})
+
+	t.Run("no required field in schema", func(t *testing.T) {
+		noReq := map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{"type": "string"},
+			},
+		}
+		err := ValidateArgs(noReq, map[string]interface{}{})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("required as interface slice", func(t *testing.T) {
+		p := map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+			"required":   []interface{}{"field1"},
+		}
+		err := ValidateArgs(p, map[string]interface{}{})
+		if err == nil {
+			t.Error("expected error for missing required field")
+		}
+	})
+
+	t.Run("unknown property allowed", func(t *testing.T) {
+		err := ValidateArgs(params, map[string]interface{}{
+			"name":    "test",
+			"unknown": "value",
+		})
+		if err != nil {
+			t.Errorf("unexpected error for unknown property: %v", err)
+		}
+	})
+}
+
+func TestValidateArgsInExecute(t *testing.T) {
+	registry := NewToolRegistry()
+	registry.Register(NewReadTool(""))
+
+	ctx := t.Context()
+
+	t.Run("validation catches missing required", func(t *testing.T) {
+		result := registry.Execute(ctx, "read", map[string]interface{}{})
+		if !result.IsError {
+			t.Error("expected error for missing required 'path'")
+		}
+		if !contains(result.ForLLM, "validation failed") {
+			t.Errorf("expected validation error message, got: %s", result.ForLLM)
+		}
+	})
+}
