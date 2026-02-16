@@ -75,8 +75,8 @@ func TestNewApp(t *testing.T) {
 
 	// Check all tools are registered
 	tools := app.GetRegistry().List()
-	if len(tools) != 4 {
-		t.Errorf("expected 4 tools, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Errorf("expected 5 tools, got %d", len(tools))
 	}
 }
 

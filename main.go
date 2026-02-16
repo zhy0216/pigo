@@ -80,6 +80,7 @@ func NewApp(cfg *Config) *App {
 	registry.Register(NewWriteTool(allowedDir))
 	registry.Register(NewEditTool(allowedDir))
 	registry.Register(NewBashTool())
+	registry.Register(NewGrepTool(allowedDir))
 
 	// Load skills
 	skills, diags := LoadSkills(cwd)
