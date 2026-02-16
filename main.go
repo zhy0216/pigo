@@ -55,6 +55,7 @@ type App struct {
 	messages []Message
 	output   io.Writer
 	skills   []Skill
+	events   *EventEmitter
 }
 
 // NewApp creates a new App instance.
@@ -107,13 +108,21 @@ When helping with coding tasks:
 		},
 	}
 
-	return &App{
+	events := NewEventEmitter()
+
+	app := &App{
 		client:   client,
 		registry: registry,
 		messages: messages,
 		output:   os.Stdout,
 		skills:   skills,
+		events:   events,
 	}
+
+	// Register default output subscriber
+	events.Subscribe(app.defaultOutputHandler)
+
+	return app
 }
 
 // HandleCommand processes a command and returns true if handled.
@@ -185,13 +194,20 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	// Manage context window
 	a.compactMessages(ctx)
 
+	a.events.Emit(AgentEvent{Type: EventAgentStart})
+
 	// Agent loop
 	maxIterations := 10
 	completed := false
+	var agentErr error
 	for iterations := 0; iterations < maxIterations; iterations++ {
+		a.events.Emit(AgentEvent{Type: EventTurnStart})
+
 		response, err := a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
 		if err != nil {
-			return fmt.Errorf("chat error: %w", err)
+			agentErr = fmt.Errorf("chat error: %w", err)
+			a.events.Emit(AgentEvent{Type: EventTurnEnd, Error: agentErr})
+			break
 		}
 
 		// Handle tool calls
@@ -202,51 +218,40 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 				ToolCalls: response.ToolCalls,
 			})
 
-			// Print tool names
-			for _, tc := range response.ToolCalls {
-				fmt.Fprintf(a.output, "%s[%s]%s ", colorGray, tc.Function.Name, colorReset)
-			}
-
 			// Execute tool calls sequentially with interrupt checks
-			type toolCallResult struct {
-				msg    Message
-				output string
-			}
-			results := make([]toolCallResult, len(response.ToolCalls))
-
 			for i, tc := range response.ToolCalls {
 				// Check for interruption between tool calls
 				if ctx.Err() != nil {
 					for j := i; j < len(response.ToolCalls); j++ {
-						results[j] = toolCallResult{
-							msg: Message{
-								Role:       "tool",
-								Content:    "Skipped due to user interrupt",
-								ToolCallID: response.ToolCalls[j].ID,
-							},
-						}
+						a.messages = append(a.messages, Message{
+							Role:       "tool",
+							Content:    "Skipped due to user interrupt",
+							ToolCallID: response.ToolCalls[j].ID,
+						})
 					}
 					break
 				}
 
+				a.events.Emit(AgentEvent{Type: EventToolStart, ToolName: tc.Function.Name})
+
 				var args map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
 					result := ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-					results[i] = toolCallResult{
-						msg: Message{
-							Role:       "tool",
-							Content:    result.ForLLM,
-							ToolCallID: tc.ID,
-						},
-					}
+					a.messages = append(a.messages, Message{
+						Role:       "tool",
+						Content:    result.ForLLM,
+						ToolCallID: tc.ID,
+					})
+					a.events.Emit(AgentEvent{Type: EventToolEnd, ToolName: tc.Function.Name})
 					continue
 				}
 
 				result := a.registry.Execute(ctx, tc.Function.Name, args)
 
-				var buf strings.Builder
+				var output string
 				if !result.Silent && result.ForUser != "" {
 					lines := strings.Split(result.ForUser, "\n")
+					var buf strings.Builder
 					if len(lines) > 20 {
 						for _, line := range lines[:20] {
 							fmt.Fprintln(&buf, line)
@@ -255,52 +260,67 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 					} else {
 						fmt.Fprintln(&buf, result.ForUser)
 					}
+					output = buf.String()
 				}
 
-				results[i] = toolCallResult{
-					msg: Message{
-						Role:       "tool",
-						Content:    result.ForLLM,
-						ToolCallID: tc.ID,
-					},
-					output: buf.String(),
-				}
+				a.messages = append(a.messages, Message{
+					Role:       "tool",
+					Content:    result.ForLLM,
+					ToolCallID: tc.ID,
+				})
+				a.events.Emit(AgentEvent{Type: EventToolEnd, ToolName: tc.Function.Name, Content: output})
 			}
 
-			// Print outputs and collect messages in order
-			for _, r := range results {
-				if r.output != "" {
-					fmt.Fprintln(a.output)
-					fmt.Fprint(a.output, r.output)
-				}
-				a.messages = append(a.messages, r.msg)
-			}
-			fmt.Fprintln(a.output)
+			a.events.Emit(AgentEvent{Type: EventTurnEnd})
 			continue
 		}
 
-		// No tool calls - text was already streamed, add newlines
-		if response.Content != "" {
-			fmt.Fprintf(a.output, "\n\n")
-		}
+		// No tool calls - text was already streamed
 		a.messages = append(a.messages, Message{
 			Role:    "assistant",
 			Content: response.Content,
 		})
+		a.events.Emit(AgentEvent{Type: EventMessageEnd, Content: response.Content})
+		a.events.Emit(AgentEvent{Type: EventTurnEnd})
 		completed = true
 		break
 	}
 
-	if !completed {
-		return fmt.Errorf("agent loop reached maximum iterations (%d) without completing", maxIterations)
+	if !completed && agentErr == nil {
+		agentErr = fmt.Errorf("agent loop reached maximum iterations (%d) without completing", maxIterations)
 	}
 
-	return nil
+	a.events.Emit(AgentEvent{Type: EventAgentEnd, Error: agentErr})
+	return agentErr
+}
+
+// defaultOutputHandler is the default event subscriber that handles console output.
+func (a *App) defaultOutputHandler(event AgentEvent) {
+	switch event.Type {
+	case EventToolStart:
+		fmt.Fprintf(a.output, "%s[%s]%s ", colorGray, event.ToolName, colorReset)
+	case EventToolEnd:
+		if event.Content != "" {
+			fmt.Fprintln(a.output)
+			fmt.Fprint(a.output, event.Content)
+		}
+	case EventTurnEnd:
+		fmt.Fprintln(a.output)
+	case EventMessageEnd:
+		if event.Content != "" {
+			fmt.Fprintf(a.output, "\n\n")
+		}
+	}
 }
 
 // GetRegistry returns the tool registry.
 func (a *App) GetRegistry() *ToolRegistry {
 	return a.registry
+}
+
+// Events returns the event emitter.
+func (a *App) Events() *EventEmitter {
+	return a.events
 }
 
 // GetModel returns the model name.
