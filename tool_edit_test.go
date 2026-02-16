@@ -10,7 +10,7 @@ import (
 func TestEditTool(t *testing.T) {
 	tmpDir := t.TempDir()
 	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
-	tool := NewEditTool(resolvedDir)
+	tool := NewEditTool(resolvedDir, &RealFileOps{})
 
 	t.Run("replace unique string", func(t *testing.T) {
 		testFile := filepath.Join(resolvedDir, "edit1.txt")

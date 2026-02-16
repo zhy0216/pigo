@@ -10,11 +10,12 @@ import (
 // EditTool replaces text in a file.
 type EditTool struct {
 	allowedDir string
+	fileOps    FileOps
 }
 
 // NewEditTool creates a new EditTool. Files are restricted to allowedDir when non-empty.
-func NewEditTool(allowedDir string) *EditTool {
-	return &EditTool{allowedDir: allowedDir}
+func NewEditTool(allowedDir string, fileOps FileOps) *EditTool {
+	return &EditTool{allowedDir: allowedDir, fileOps: fileOps}
 }
 
 func (t *EditTool) Name() string {
@@ -73,7 +74,7 @@ func (t *EditTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(err.Error())
 	}
 
-	info, err := os.Stat(resolvedPath)
+	info, err := t.fileOps.Stat(resolvedPath)
 	if os.IsNotExist(err) {
 		return ErrorResult(fmt.Sprintf("file not found: %s", path))
 	}
@@ -81,7 +82,7 @@ func (t *EditTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(fmt.Sprintf("failed to stat file: %v", err))
 	}
 
-	content, err := os.ReadFile(resolvedPath)
+	content, err := t.fileOps.ReadFile(resolvedPath)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
@@ -104,7 +105,7 @@ func (t *EditTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		newContent = strings.Replace(contentStr, oldString, newString, 1)
 	}
 
-	if err := os.WriteFile(resolvedPath, []byte(newContent), info.Mode()); err != nil {
+	if err := t.fileOps.WriteFile(resolvedPath, []byte(newContent), info.Mode()); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 

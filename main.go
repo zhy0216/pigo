@@ -79,13 +79,13 @@ func NewApp(cfg *Config) *App {
 		}
 	}
 
-	registry.Register(NewReadTool(allowedDir))
-	registry.Register(NewWriteTool(allowedDir))
-	registry.Register(NewEditTool(allowedDir))
-	registry.Register(NewBashTool())
-	registry.Register(NewGrepTool(allowedDir))
-	registry.Register(NewFindTool(allowedDir))
-	registry.Register(NewLsTool(allowedDir))
+	registry.Register(NewReadTool(allowedDir, &RealFileOps{}))
+	registry.Register(NewWriteTool(allowedDir, &RealFileOps{}))
+	registry.Register(NewEditTool(allowedDir, &RealFileOps{}))
+	registry.Register(NewBashTool(&RealExecOps{}))
+	registry.Register(NewGrepTool(allowedDir, &RealFileOps{}, &RealExecOps{}))
+	registry.Register(NewFindTool(allowedDir, &RealFileOps{}, &RealExecOps{}))
+	registry.Register(NewLsTool(allowedDir, &RealFileOps{}))
 
 	// Load skills
 	skills, diags := LoadSkills(cwd)

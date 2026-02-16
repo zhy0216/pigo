@@ -10,7 +10,7 @@ import (
 func TestReadTool(t *testing.T) {
 	tmpDir := t.TempDir()
 	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
-	tool := NewReadTool(resolvedDir)
+	tool := NewReadTool(resolvedDir, &RealFileOps{})
 
 	// Create temp file
 	testFile := filepath.Join(resolvedDir, "test.txt")

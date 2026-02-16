@@ -13,10 +13,10 @@ func TestIntegration_ReadWriteEditWorkflow(t *testing.T) {
 	testFile := filepath.Join(resolvedDir, "test.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewReadTool(resolvedDir))
-	registry.Register(NewWriteTool(resolvedDir))
-	registry.Register(NewEditTool(resolvedDir))
-	registry.Register(NewBashTool())
+	registry.Register(NewReadTool(resolvedDir, &RealFileOps{}))
+	registry.Register(NewWriteTool(resolvedDir, &RealFileOps{}))
+	registry.Register(NewEditTool(resolvedDir, &RealFileOps{}))
+	registry.Register(NewBashTool(&RealExecOps{}))
 
 	ctx := context.Background()
 
@@ -70,7 +70,7 @@ func TestIntegration_ReadWriteEditWorkflow(t *testing.T) {
 
 func TestIntegration_BashCommand(t *testing.T) {
 	registry := NewToolRegistry()
-	registry.Register(NewBashTool())
+	registry.Register(NewBashTool(&RealExecOps{}))
 
 	ctx := context.Background()
 
@@ -118,8 +118,8 @@ func TestIntegration_NestedDirectoryWrite(t *testing.T) {
 	nestedFile := filepath.Join(resolvedDir, "a", "b", "c", "file.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewWriteTool(resolvedDir))
-	registry.Register(NewReadTool(resolvedDir))
+	registry.Register(NewWriteTool(resolvedDir, &RealFileOps{}))
+	registry.Register(NewReadTool(resolvedDir, &RealFileOps{}))
 
 	ctx := context.Background()
 
@@ -150,8 +150,8 @@ func TestIntegration_EditWithReplaceAll(t *testing.T) {
 	testFile := filepath.Join(resolvedDir, "replace.txt")
 
 	registry := NewToolRegistry()
-	registry.Register(NewWriteTool(resolvedDir))
-	registry.Register(NewEditTool(resolvedDir))
+	registry.Register(NewWriteTool(resolvedDir, &RealFileOps{}))
+	registry.Register(NewEditTool(resolvedDir, &RealFileOps{}))
 
 	ctx := context.Background()
 

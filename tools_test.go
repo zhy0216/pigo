@@ -7,7 +7,7 @@ import (
 func TestToolRegistry(t *testing.T) {
 	t.Run("register and get tool", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool(""))
+		registry.Register(NewReadTool("", &RealFileOps{}))
 
 		tool, ok := registry.Get("read")
 		if !ok {
@@ -28,8 +28,8 @@ func TestToolRegistry(t *testing.T) {
 
 	t.Run("list tools", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool(""))
-		registry.Register(NewWriteTool(""))
+		registry.Register(NewReadTool("", &RealFileOps{}))
+		registry.Register(NewWriteTool("", &RealFileOps{}))
 
 		names := registry.List()
 		if len(names) != 2 {
@@ -39,7 +39,7 @@ func TestToolRegistry(t *testing.T) {
 
 	t.Run("get definitions", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.Register(NewReadTool(""))
+		registry.Register(NewReadTool("", &RealFileOps{}))
 
 		defs := registry.GetDefinitions()
 		if len(defs) != 1 {
@@ -63,10 +63,10 @@ func TestToolRegistry(t *testing.T) {
 
 func TestToolDescriptionAndParameters(t *testing.T) {
 	tools := []Tool{
-		NewReadTool(""),
-		NewWriteTool(""),
-		NewEditTool(""),
-		NewBashTool(),
+		NewReadTool("", &RealFileOps{}),
+		NewWriteTool("", &RealFileOps{}),
+		NewEditTool("", &RealFileOps{}),
+		NewBashTool(&RealExecOps{}),
 	}
 
 	for _, tool := range tools {
@@ -209,7 +209,7 @@ func TestValidateArgs(t *testing.T) {
 
 func TestValidateArgsInExecute(t *testing.T) {
 	registry := NewToolRegistry()
-	registry.Register(NewReadTool(""))
+	registry.Register(NewReadTool("", &RealFileOps{}))
 
 	ctx := t.Context()
 

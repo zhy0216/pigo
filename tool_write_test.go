@@ -10,7 +10,7 @@ import (
 func TestWriteTool(t *testing.T) {
 	tmpDir := t.TempDir()
 	resolvedDir, _ := filepath.EvalSymlinks(tmpDir)
-	tool := NewWriteTool(resolvedDir)
+	tool := NewWriteTool(resolvedDir, &RealFileOps{})
 
 	t.Run("write new file", func(t *testing.T) {
 		testFile := filepath.Join(resolvedDir, "new.txt")

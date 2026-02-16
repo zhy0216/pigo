@@ -16,11 +16,12 @@ const (
 // LsTool lists directory contents with type indicators.
 type LsTool struct {
 	allowedDir string
+	fileOps    FileOps
 }
 
 // NewLsTool creates a new LsTool. Paths are restricted to allowedDir when non-empty.
-func NewLsTool(allowedDir string) *LsTool {
-	return &LsTool{allowedDir: allowedDir}
+func NewLsTool(allowedDir string, fileOps FileOps) *LsTool {
+	return &LsTool{allowedDir: allowedDir, fileOps: fileOps}
 }
 
 func (t *LsTool) Name() string {
@@ -60,7 +61,7 @@ func (t *LsTool) Execute(ctx context.Context, args map[string]interface{}) *Tool
 		return ErrorResult(fmt.Sprintf("path error: %v", err))
 	}
 
-	info, err := os.Stat(resolvedPath)
+	info, err := t.fileOps.Stat(resolvedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrorResult(fmt.Sprintf("path not found: %s", pathArg))
@@ -71,7 +72,7 @@ func (t *LsTool) Execute(ctx context.Context, args map[string]interface{}) *Tool
 		return ErrorResult(fmt.Sprintf("not a directory: %s", pathArg))
 	}
 
-	entries, err := os.ReadDir(resolvedPath)
+	entries, err := t.fileOps.ReadDir(resolvedPath)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("cannot read directory: %v", err))
 	}

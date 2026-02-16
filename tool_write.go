@@ -10,11 +10,12 @@ import (
 // WriteTool writes content to a file.
 type WriteTool struct {
 	allowedDir string
+	fileOps    FileOps
 }
 
 // NewWriteTool creates a new WriteTool. Files are restricted to allowedDir when non-empty.
-func NewWriteTool(allowedDir string) *WriteTool {
-	return &WriteTool{allowedDir: allowedDir}
+func NewWriteTool(allowedDir string, fileOps FileOps) *WriteTool {
+	return &WriteTool{allowedDir: allowedDir, fileOps: fileOps}
 }
 
 func (t *WriteTool) Name() string {
@@ -60,17 +61,17 @@ func (t *WriteTool) Execute(ctx context.Context, args map[string]interface{}) *T
 
 	// Create parent directories if needed
 	dir := filepath.Dir(resolvedPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := t.fileOps.MkdirAll(dir, 0755); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
 	}
 
 	// Preserve permissions if file already exists, otherwise use 0644
 	perm := os.FileMode(0644)
-	if info, err := os.Stat(resolvedPath); err == nil {
+	if info, err := t.fileOps.Stat(resolvedPath); err == nil {
 		perm = info.Mode().Perm()
 	}
 
-	if err := os.WriteFile(resolvedPath, []byte(content), perm); err != nil {
+	if err := t.fileOps.WriteFile(resolvedPath, []byte(content), perm); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 

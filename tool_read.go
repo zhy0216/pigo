@@ -9,11 +9,12 @@ import (
 // ReadTool reads file contents with line numbers.
 type ReadTool struct {
 	allowedDir string
+	fileOps    FileOps
 }
 
 // NewReadTool creates a new ReadTool. Files are restricted to allowedDir when non-empty.
-func NewReadTool(allowedDir string) *ReadTool {
-	return &ReadTool{allowedDir: allowedDir}
+func NewReadTool(allowedDir string, fileOps FileOps) *ReadTool {
+	return &ReadTool{allowedDir: allowedDir, fileOps: fileOps}
 }
 
 func (t *ReadTool) Name() string {
@@ -56,7 +57,7 @@ func (t *ReadTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(err.Error())
 	}
 
-	info, err := os.Stat(resolvedPath)
+	info, err := t.fileOps.Stat(resolvedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrorResult(fmt.Sprintf("file not found: %s", path))
@@ -72,7 +73,7 @@ func (t *ReadTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(fmt.Sprintf("file is too large (%d bytes, max %d). Use offset and limit to read a portion", info.Size(), maxReadFileSize))
 	}
 
-	content, err := os.ReadFile(resolvedPath)
+	content, err := t.fileOps.ReadFile(resolvedPath)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}

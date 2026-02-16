@@ -8,7 +8,7 @@ import (
 )
 
 func TestBashTool(t *testing.T) {
-	tool := NewBashTool()
+	tool := NewBashTool(&RealExecOps{})
 
 	t.Run("simple command", func(t *testing.T) {
 		result := tool.Execute(context.Background(), map[string]interface{}{

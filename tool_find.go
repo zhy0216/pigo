@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -18,11 +16,13 @@ const (
 // FindTool discovers files matching a glob pattern using fd or a Go fallback.
 type FindTool struct {
 	allowedDir string
+	fileOps    FileOps
+	execOps    ExecOps
 }
 
 // NewFindTool creates a new FindTool. Searches are restricted to allowedDir when non-empty.
-func NewFindTool(allowedDir string) *FindTool {
-	return &FindTool{allowedDir: allowedDir}
+func NewFindTool(allowedDir string, fileOps FileOps, execOps ExecOps) *FindTool {
+	return &FindTool{allowedDir: allowedDir, fileOps: fileOps, execOps: execOps}
 }
 
 func (t *FindTool) Name() string {
@@ -78,7 +78,7 @@ func (t *FindTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	// Check if path exists
-	info, err := os.Stat(resolvedPath)
+	info, err := t.fileOps.Stat(resolvedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrorResult(fmt.Sprintf("path not found: %s", searchPath))
@@ -90,18 +90,18 @@ func (t *FindTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	// Try fd/fdfind first, fall back to Go native
-	if fdPath, err := findFdBinary(); err == nil {
+	if fdPath, err := t.findFdBinary(); err == nil {
 		return t.executeWithFd(ctx, fdPath, pattern, resolvedPath, typeFilter)
 	}
 	return t.executeNative(pattern, resolvedPath, typeFilter)
 }
 
 // findFdBinary looks for fd or fdfind (Debian/Ubuntu name) in PATH.
-func findFdBinary() (string, error) {
-	if p, err := exec.LookPath("fd"); err == nil {
+func (t *FindTool) findFdBinary() (string, error) {
+	if p, err := t.execOps.LookPath("fd"); err == nil {
 		return p, nil
 	}
-	return exec.LookPath("fdfind")
+	return t.execOps.LookPath("fdfind")
 }
 
 func (t *FindTool) executeWithFd(ctx context.Context, fdPath, pattern, searchPath, typeFilter string) *ToolResult {
@@ -116,36 +116,34 @@ func (t *FindTool) executeWithFd(ctx context.Context, fdPath, pattern, searchPat
 
 	args = append(args, pattern, searchPath)
 
-	cmd := exec.CommandContext(ctx, fdPath, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
+	stdout, stderr, exitCode, err := t.execOps.Run(ctx, fdPath, args, nil)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return NewToolResult("No files found.")
-		}
-		if stderr.Len() > 0 {
-			return ErrorResult(fmt.Sprintf("find error: %s", stderr.String()))
-		}
 		return ErrorResult(fmt.Sprintf("find error: %v", err))
 	}
 
-	output := stdout.String()
-	if output == "" {
+	if exitCode == 1 {
+		return NewToolResult("No files found.")
+	}
+	if exitCode > 1 {
+		if stderr != "" {
+			return ErrorResult(fmt.Sprintf("find error: %s", stderr))
+		}
+		return ErrorResult(fmt.Sprintf("find error: exit code %d", exitCode))
+	}
+
+	if stdout == "" {
 		return NewToolResult("No files found.")
 	}
 
 	// Relativize paths and apply byte limit
-	return t.formatResults(output, searchPath)
+	return t.formatResults(stdout, searchPath)
 }
 
 func (t *FindTool) executeNative(pattern, searchPath, typeFilter string) *ToolResult {
 	var result strings.Builder
 	count := 0
 
-	err := filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+	err := t.fileOps.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip inaccessible entries
 		}

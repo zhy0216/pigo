@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,11 +21,13 @@ const (
 // GrepTool searches files for patterns using ripgrep or a Go fallback.
 type GrepTool struct {
 	allowedDir string
+	fileOps    FileOps
+	execOps    ExecOps
 }
 
 // NewGrepTool creates a new GrepTool. Searches are restricted to allowedDir when non-empty.
-func NewGrepTool(allowedDir string) *GrepTool {
-	return &GrepTool{allowedDir: allowedDir}
+func NewGrepTool(allowedDir string, fileOps FileOps, execOps ExecOps) *GrepTool {
+	return &GrepTool{allowedDir: allowedDir, fileOps: fileOps, execOps: execOps}
 }
 
 func (t *GrepTool) Name() string {
@@ -80,7 +80,7 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	// Check if path exists
-	if _, err := os.Stat(resolvedPath); err != nil {
+	if _, err := t.fileOps.Stat(resolvedPath); err != nil {
 		if os.IsNotExist(err) {
 			return ErrorResult(fmt.Sprintf("path not found: %s", searchPath))
 		}
@@ -88,7 +88,7 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	// Try ripgrep first, fall back to Go native
-	if rgPath, err := exec.LookPath("rg"); err == nil {
+	if rgPath, err := t.execOps.LookPath("rg"); err == nil {
 		return t.executeWithRg(ctx, rgPath, pattern, resolvedPath, include, contextLines)
 	}
 	return t.executeNative(pattern, resolvedPath, include, contextLines)
@@ -120,38 +120,23 @@ func (t *GrepTool) executeWithRg(ctx context.Context, rgPath, pattern, searchPat
 	}
 	args = append(args, pattern, searchPath)
 
-	cmd := exec.CommandContext(ctx, rgPath, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	stdout, err := cmd.StdoutPipe()
+	stdout, stderr, exitCode, err := t.execOps.Run(ctx, rgPath, args, nil)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("grep error: %v", err))
 	}
 
-	if err := cmd.Start(); err != nil {
-		return ErrorResult(fmt.Sprintf("grep error: %v", err))
+	if exitCode == 1 {
+		return NewToolResult("No matches found.")
 	}
-
-	// Stream output, kill process when match limit is reached
-	result, killed := t.parseRgStream(stdout, searchPath)
-
-	if killed {
-		// Kill process since we hit the limit
-		cmd.Process.Kill()
-	}
-
-	waitErr := cmd.Wait()
-	if !killed && waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return NewToolResult("No matches found.")
+	if exitCode > 1 {
+		if stderr != "" {
+			return ErrorResult(fmt.Sprintf("grep error: %s", stderr))
 		}
-		if stderr.Len() > 0 {
-			return ErrorResult(fmt.Sprintf("grep error: %s", stderr.String()))
-		}
-		return ErrorResult(fmt.Sprintf("grep error: %v", waitErr))
+		return ErrorResult(fmt.Sprintf("grep error: exit code %d", exitCode))
 	}
 
+	// Parse the buffered JSON output
+	result, _ := t.parseRgStream(strings.NewReader(stdout), searchPath)
 	return result
 }
 
@@ -230,7 +215,7 @@ func (t *GrepTool) executeNative(pattern, searchPath, include string, contextLin
 	var result strings.Builder
 	matches := 0
 
-	err = filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
+	err = t.fileOps.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip inaccessible entries
 		}
@@ -263,7 +248,7 @@ func (t *GrepTool) executeNative(pattern, searchPath, include string, contextLin
 			return fmt.Errorf("match limit reached")
 		}
 
-		content, err := os.ReadFile(path)
+		content, err := t.fileOps.ReadFile(path)
 		if err != nil {
 			return nil
 		}

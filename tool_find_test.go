@@ -9,14 +9,14 @@ import (
 )
 
 func TestFindTool_Name(t *testing.T) {
-	tool := NewFindTool("")
+	tool := NewFindTool("", &RealFileOps{}, &RealExecOps{})
 	if tool.Name() != "find" {
 		t.Errorf("expected name 'find', got %q", tool.Name())
 	}
 }
 
 func TestFindTool_Parameters(t *testing.T) {
-	tool := NewFindTool("")
+	tool := NewFindTool("", &RealFileOps{}, &RealExecOps{})
 	params := tool.Parameters()
 	required, ok := params["required"].([]string)
 	if !ok {
@@ -28,7 +28,7 @@ func TestFindTool_Parameters(t *testing.T) {
 }
 
 func TestFindTool_MissingPattern(t *testing.T) {
-	tool := NewFindTool("")
+	tool := NewFindTool("", &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 	if !result.IsError {
 		t.Error("expected error for missing pattern")
@@ -41,7 +41,7 @@ func TestFindTool_BasicSearch(t *testing.T) {
 	createTestFile(t, dir, "utils.go", "package main")
 	createTestFile(t, dir, "readme.md", "# readme")
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*.go",
 		"path":    dir,
@@ -65,7 +65,7 @@ func TestFindTool_TypeFilterFile(t *testing.T) {
 	createTestFile(t, dir, "file.txt", "content")
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
 		"path":    dir,
@@ -87,7 +87,7 @@ func TestFindTool_TypeFilterDirectory(t *testing.T) {
 	createTestFile(t, dir, "file.txt", "content")
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
 		"path":    dir,
@@ -106,7 +106,7 @@ func TestFindTool_TypeFilterDirectory(t *testing.T) {
 
 func TestFindTool_InvalidType(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
 		"path":    dir,
@@ -121,7 +121,7 @@ func TestFindTool_NoMatches(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "test.txt", "content")
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*.xyz",
 		"path":    dir,
@@ -136,7 +136,7 @@ func TestFindTool_NoMatches(t *testing.T) {
 
 func TestFindTool_AllowedDirBoundary(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
@@ -149,7 +149,7 @@ func TestFindTool_AllowedDirBoundary(t *testing.T) {
 
 func TestFindTool_PathNotFound(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
@@ -164,7 +164,7 @@ func TestFindTool_PathIsFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "test.txt", "content")
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*",
 		"path":    filepath.Join(dir, "test.txt"),
@@ -182,7 +182,7 @@ func TestFindTool_SkipsHiddenDirs(t *testing.T) {
 	os.MkdirAll(hiddenDir, 0755)
 	createTestFile(t, dir, ".git/config.go", "package git")
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*.go",
 		"path":    dir,
@@ -204,7 +204,7 @@ func TestFindTool_Subdirectories(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sub"), 0755)
 	createTestFile(t, dir, "sub/nested.go", "package sub")
 
-	tool := NewFindTool(dir)
+	tool := NewFindTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "*.go",
 		"path":    dir,
@@ -221,7 +221,7 @@ func TestFindTool_Subdirectories(t *testing.T) {
 }
 
 func TestFindTool_FormatResults(t *testing.T) {
-	tool := NewFindTool("")
+	tool := NewFindTool("", &RealFileOps{}, &RealExecOps{})
 
 	output := "/tmp/test/foo.go\n/tmp/test/bar.go\n/tmp/test/sub/baz.go\n"
 	result := tool.formatResults(output, "/tmp/test")
@@ -241,7 +241,7 @@ func TestFindTool_FormatResults(t *testing.T) {
 }
 
 func TestFindTool_FormatResultsEmpty(t *testing.T) {
-	tool := NewFindTool("")
+	tool := NewFindTool("", &RealFileOps{}, &RealExecOps{})
 	result := tool.formatResults("", "/tmp")
 
 	if !strings.Contains(result.ForLLM, "No files found") {

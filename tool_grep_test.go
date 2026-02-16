@@ -10,14 +10,14 @@ import (
 )
 
 func TestGrepTool_Name(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 	if tool.Name() != "grep" {
 		t.Errorf("expected name 'grep', got %q", tool.Name())
 	}
 }
 
 func TestGrepTool_Parameters(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 	params := tool.Parameters()
 	required, ok := params["required"].([]string)
 	if !ok {
@@ -29,7 +29,7 @@ func TestGrepTool_Parameters(t *testing.T) {
 }
 
 func TestGrepTool_MissingPattern(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 	if !result.IsError {
 		t.Error("expected error for missing pattern")
@@ -40,7 +40,7 @@ func TestGrepTool_InvalidRegex(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "test.txt", "hello world\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "[invalid",
 		"path":    dir,
@@ -57,7 +57,7 @@ func TestGrepTool_NativeSearch(t *testing.T) {
 	writeTestFile(t, dir, "file2.go", "package main\n\nfunc World() string {\n\treturn \"world\"\n}\n")
 	writeTestFile(t, dir, "readme.txt", "This is a readme\nNo functions here\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	// Test basic search
 	result := tool.Execute(context.Background(), map[string]interface{}{
@@ -81,7 +81,7 @@ func TestGrepTool_IncludeFilter(t *testing.T) {
 	writeTestFile(t, dir, "file.go", "hello world\n")
 	writeTestFile(t, dir, "file.txt", "hello world\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "hello",
@@ -104,7 +104,7 @@ func TestGrepTool_NoMatches(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "test.txt", "hello world\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "zzz_not_found",
 		"path":    dir,
@@ -119,7 +119,7 @@ func TestGrepTool_NoMatches(t *testing.T) {
 
 func TestGrepTool_AllowedDirBoundary(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "test",
@@ -132,7 +132,7 @@ func TestGrepTool_AllowedDirBoundary(t *testing.T) {
 
 func TestGrepTool_PathNotFound(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "test",
@@ -148,7 +148,7 @@ func TestGrepTool_LineTruncation(t *testing.T) {
 	longLine := strings.Repeat("x", 600) + "MATCH" + strings.Repeat("y", 100)
 	writeTestFile(t, dir, "test.txt", longLine+"\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "MATCH",
 		"path":    dir,
@@ -171,7 +171,7 @@ func TestGrepTool_SkipsHiddenDirs(t *testing.T) {
 	os.MkdirAll(hiddenDir, 0755)
 	writeTestFile(t, dir, ".hidden/secret.txt", "hello\n")
 
-	tool := NewGrepTool(dir)
+	tool := NewGrepTool(dir, &RealFileOps{}, &RealExecOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"pattern": "hello",
 		"path":    dir,
@@ -200,7 +200,7 @@ func TestRelativizePath(t *testing.T) {
 }
 
 func TestParseRgStream_Matches(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 
 	// Simulate rg --json output
 	lines := []string{
@@ -230,7 +230,7 @@ func TestParseRgStream_Matches(t *testing.T) {
 }
 
 func TestParseRgStream_NoMatches(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 	input := strings.NewReader(`{"type":"summary","data":{}}`)
 
 	result, killed := tool.parseRgStream(input, "/tmp")
@@ -243,7 +243,7 @@ func TestParseRgStream_NoMatches(t *testing.T) {
 }
 
 func TestParseRgStream_MatchLimitKill(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 
 	// Generate more than grepMaxMatches matches
 	var lines []string
@@ -263,7 +263,7 @@ func TestParseRgStream_MatchLimitKill(t *testing.T) {
 }
 
 func TestParseRgStream_ContextLines(t *testing.T) {
-	tool := NewGrepTool("")
+	tool := NewGrepTool("", &RealFileOps{}, &RealExecOps{})
 
 	lines := []string{
 		`{"type":"context","data":{"path":{"text":"/tmp/test/foo.go"},"lines":{"text":"// before\n"},"line_number":2}}`,

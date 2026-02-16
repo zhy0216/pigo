@@ -9,14 +9,14 @@ import (
 )
 
 func TestLsTool_Name(t *testing.T) {
-	tool := NewLsTool("")
+	tool := NewLsTool("", &RealFileOps{})
 	if tool.Name() != "ls" {
 		t.Errorf("expected 'ls', got '%s'", tool.Name())
 	}
 }
 
 func TestLsTool_Parameters(t *testing.T) {
-	tool := NewLsTool("")
+	tool := NewLsTool("", &RealFileOps{})
 	params := tool.Parameters()
 	if params["type"] != "object" {
 		t.Error("expected type 'object'")
@@ -35,7 +35,7 @@ func TestLsTool_BasicList(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("hello"), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"path": tmpDir,
 	})
@@ -67,7 +67,7 @@ func TestLsTool_HiddenFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, ".hidden"), []byte("secret"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "visible"), []byte("hello"), 0644)
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 
 	// Without all flag: hidden files should be excluded
 	result := tool.Execute(context.Background(), map[string]interface{}{
@@ -93,7 +93,7 @@ func TestLsTool_HiddenFiles(t *testing.T) {
 func TestLsTool_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"path": tmpDir,
 	})
@@ -111,7 +111,7 @@ func TestLsTool_NotADirectory(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "file.txt")
 	os.WriteFile(filePath, []byte("hello"), 0644)
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"path": filePath,
 	})
@@ -127,7 +127,7 @@ func TestLsTool_NotADirectory(t *testing.T) {
 func TestLsTool_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"path": filepath.Join(tmpDir, "nonexistent"),
 	})
@@ -143,7 +143,7 @@ func TestLsTool_NotFound(t *testing.T) {
 func TestLsTool_AllowedDirBoundary(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	tool := NewLsTool(tmpDir)
+	tool := NewLsTool(tmpDir, &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"path": "/etc",
 	})
@@ -154,7 +154,7 @@ func TestLsTool_AllowedDirBoundary(t *testing.T) {
 }
 
 func TestLsTool_MissingPath(t *testing.T) {
-	tool := NewLsTool("")
+	tool := NewLsTool("", &RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 
 	if !result.IsError {

@@ -1,19 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"time"
 )
 
 // BashTool executes shell commands.
-type BashTool struct{}
+type BashTool struct {
+	execOps ExecOps
+}
 
 // NewBashTool creates a new BashTool.
-func NewBashTool() *BashTool {
-	return &BashTool{}
+func NewBashTool(execOps ExecOps) *BashTool {
+	return &BashTool{execOps: execOps}
 }
 
 func (t *BashTool) Name() string {
@@ -55,27 +55,23 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	cmdCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "/bin/bash", "-c", command)
-	cmd.Env = sanitizeEnv()
+	stdout, stderr, exitCode, runErr := t.execOps.Run(cmdCtx, "/bin/bash", []string{"-c", command}, sanitizeEnv())
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	runErr := cmd.Run()
-	output := stdout.String()
-	if stderr.Len() > 0 {
+	output := stdout
+	if stderr != "" {
 		if output != "" {
 			output += "\n"
 		}
-		output += "STDERR:\n" + stderr.String()
+		output += "STDERR:\n" + stderr
 	}
 
 	if runErr != nil {
 		if cmdCtx.Err() == context.DeadlineExceeded {
 			return ErrorResult(fmt.Sprintf("Command timed out after %d seconds", timeout))
 		}
-		output += fmt.Sprintf("\nExit code: %v", runErr)
+		output += fmt.Sprintf("\nError: %v", runErr)
+	} else if exitCode != 0 {
+		output += fmt.Sprintf("\nExit code: exit status %d", exitCode)
 	}
 
 	if output == "" {
@@ -85,7 +81,7 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	// Truncate long output — keep tail for bash (errors/exit status are at the end)
 	output = truncateTail(output, 10000)
 
-	if runErr != nil {
+	if runErr != nil || exitCode != 0 {
 		return &ToolResult{
 			ForLLM:  output,
 			ForUser: output,
