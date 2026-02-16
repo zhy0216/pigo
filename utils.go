@@ -96,12 +96,21 @@ func formatWithLineNumbers(content string, offset, limit int) string {
 	return result.String()
 }
 
-// truncateOutput limits output length and adds truncation notice.
+// truncateOutput limits output length by keeping the head and adds truncation notice.
 func truncateOutput(output string, maxLen int) string {
 	if len(output) <= maxLen {
 		return output
 	}
 	return output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
+}
+
+// truncateTail limits output length by keeping the tail (last maxLen chars).
+// Useful for bash output where errors and exit status appear at the end.
+func truncateTail(output string, maxLen int) string {
+	if len(output) <= maxLen {
+		return output
+	}
+	return fmt.Sprintf("[output truncated: showing last %d of %d chars]\n", maxLen, len(output)) + output[len(output)-maxLen:]
 }
 
 // extractString extracts a required string parameter from args.

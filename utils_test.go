@@ -57,6 +57,34 @@ func TestTruncateOutput(t *testing.T) {
 	})
 }
 
+func TestTruncateTail(t *testing.T) {
+	t.Run("no truncation needed", func(t *testing.T) {
+		result := truncateTail("short", 100)
+		if result != "short" {
+			t.Errorf("expected 'short', got '%s'", result)
+		}
+	})
+
+	t.Run("keeps tail not head", func(t *testing.T) {
+		input := "AAAA" + strings.Repeat("x", 100) + "ZZZZ"
+		result := truncateTail(input, 10)
+		if !strings.HasSuffix(result, "ZZZZ") {
+			t.Errorf("expected tail to be preserved, got: %s", result)
+		}
+		if strings.Contains(result, "AAAA") {
+			t.Error("expected head to be truncated")
+		}
+	})
+
+	t.Run("includes metadata", func(t *testing.T) {
+		input := strings.Repeat("x", 200)
+		result := truncateTail(input, 50)
+		if !strings.Contains(result, "showing last 50 of 200") {
+			t.Errorf("expected truncation metadata, got: %s", result)
+		}
+	})
+}
+
 func TestValidatePath(t *testing.T) {
 	t.Run("empty path", func(t *testing.T) {
 		_, err := validatePath("", "")

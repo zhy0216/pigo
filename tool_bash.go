@@ -82,8 +82,8 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		output = "(no output)"
 	}
 
-	// Truncate long output
-	output = truncateOutput(output, 10000)
+	// Truncate long output — keep tail for bash (errors/exit status are at the end)
+	output = truncateTail(output, 10000)
 
 	if runErr != nil {
 		return &ToolResult{
