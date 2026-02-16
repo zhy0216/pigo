@@ -118,13 +118,16 @@ func writeSSEResponse(w http.ResponseWriter, response map[string]interface{}) {
 		}
 	}
 
-	// Send finish chunk
+	// Send finish chunk (include usage if present)
 	finishChunk := map[string]interface{}{
 		"id": id, "object": "chat.completion.chunk",
 		"created": created, "model": model,
 		"choices": []map[string]interface{}{
 			{"index": 0, "delta": map[string]interface{}{}, "finish_reason": finishReason},
 		},
+	}
+	if usage, ok := response["usage"]; ok {
+		finishChunk["usage"] = usage
 	}
 	data, _ := json.Marshal(finishChunk)
 	fmt.Fprintf(w, "data: %s\n\n", data)
@@ -1099,5 +1102,98 @@ func TestProcessInputContextOverflowMaxRetries(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "chat error") {
 		t.Errorf("expected chat error, got: %v", err)
+	}
+}
+
+func TestUsageTracking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id": "chatcmpl-usage", "object": "chat.completion",
+			"created": 1677652288, "model": "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "Hello!",
+					},
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     float64(50),
+				"completion_tokens": float64(10),
+				"total_tokens":      float64(60),
+			},
+		}
+		writeSSEResponse(w, response)
+	}))
+	defer server.Close()
+
+	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	app := NewApp(cfg)
+	app.output = &bytes.Buffer{}
+
+	// First call
+	err := app.ProcessInput(context.Background(), "hi")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Second call
+	err = app.ProcessInput(context.Background(), "hello again")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Usage should be accumulated across calls
+	u := app.GetUsage()
+	if u.TotalTokens == 0 {
+		t.Error("expected non-zero total tokens")
+	}
+}
+
+func TestUsageCommand(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	app := NewApp(cfg)
+	buf := &bytes.Buffer{}
+	app.output = buf
+
+	// No usage yet
+	handled, exit := app.HandleCommand("/usage")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /usage")
+	}
+	if !strings.Contains(buf.String(), "No tokens used") {
+		t.Errorf("expected 'No tokens used' message, got: %s", buf.String())
+	}
+
+	// Add some usage
+	buf.Reset()
+	app.addUsage(TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150})
+	app.HandleCommand("/usage")
+	output := buf.String()
+	if !strings.Contains(output, "100") || !strings.Contains(output, "50") || !strings.Contains(output, "150") {
+		t.Errorf("expected usage numbers in output, got: %s", output)
+	}
+}
+
+func TestQuitShowsUsage(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	app := NewApp(cfg)
+	buf := &bytes.Buffer{}
+	app.output = buf
+
+	app.addUsage(TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300})
+	handled, exit := app.HandleCommand("/q")
+	if !handled || !exit {
+		t.Error("expected handled=true, exit=true for /q")
+	}
+	output := buf.String()
+	if !strings.Contains(output, "300") {
+		t.Errorf("expected total tokens in quit output, got: %s", output)
+	}
+	if !strings.Contains(output, "Goodbye") {
+		t.Errorf("expected Goodbye in output, got: %s", output)
 	}
 }

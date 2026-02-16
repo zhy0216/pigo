@@ -61,6 +61,14 @@ type ChatResponse struct {
 	Content      string
 	ToolCalls    []ToolCall
 	FinishReason string
+	Usage        TokenUsage
+}
+
+// TokenUsage tracks token counts from an API response.
+type TokenUsage struct {
+	PromptTokens     int64
+	CompletionTokens int64
+	TotalTokens      int64
 }
 
 // Chat sends a chat request, dispatching to the appropriate API based on apiType.
@@ -162,6 +170,11 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []Message, too
 	response := &ChatResponse{
 		Content:      choice.Message.Content,
 		FinishReason: string(choice.FinishReason),
+		Usage: TokenUsage{
+			PromptTokens:     completion.Usage.PromptTokens,
+			CompletionTokens: completion.Usage.CompletionTokens,
+			TotalTokens:      completion.Usage.TotalTokens,
+		},
 	}
 
 	// Convert tool calls
@@ -281,7 +294,13 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []Message, toolD
 	}
 
 	// Parse response output
-	response := &ChatResponse{}
+	response := &ChatResponse{
+		Usage: TokenUsage{
+			PromptTokens:     resp.Usage.InputTokens,
+			CompletionTokens: resp.Usage.OutputTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		},
+	}
 	for _, item := range resp.Output {
 		switch item.Type {
 		case "message":
@@ -401,6 +420,11 @@ func (c *Client) chatStreamViaCompletions(ctx context.Context, messages []Messag
 	response := &ChatResponse{
 		Content:      choice.Message.Content,
 		FinishReason: string(choice.FinishReason),
+		Usage: TokenUsage{
+			PromptTokens:     acc.Usage.PromptTokens,
+			CompletionTokens: acc.Usage.CompletionTokens,
+			TotalTokens:      acc.Usage.TotalTokens,
+		},
 	}
 
 	for _, tc := range choice.Message.ToolCalls {
@@ -516,6 +540,7 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message,
 	}
 	var pendingCalls []pendingCall
 	var textContent string
+	var usage TokenUsage
 
 	for stream.Next() {
 		event := stream.Current()
@@ -542,6 +567,14 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message,
 			if len(pendingCalls) > 0 {
 				pendingCalls[len(pendingCalls)-1].args = event.Arguments
 			}
+		case "response.completed":
+			if event.Response.Usage.TotalTokens > 0 {
+				usage = TokenUsage{
+					PromptTokens:     event.Response.Usage.InputTokens,
+					CompletionTokens: event.Response.Usage.OutputTokens,
+					TotalTokens:      event.Response.Usage.TotalTokens,
+				}
+			}
 		}
 	}
 
@@ -549,7 +582,7 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message,
 		return nil, wrapAPIError("streaming responses API call failed", err)
 	}
 
-	response := &ChatResponse{Content: textContent}
+	response := &ChatResponse{Content: textContent, Usage: usage}
 	for _, pc := range pendingCalls {
 		response.ToolCalls = append(response.ToolCalls, ToolCall{
 			ID:   pc.callID,

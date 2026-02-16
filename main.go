@@ -56,6 +56,7 @@ type App struct {
 	output   io.Writer
 	skills   []Skill
 	events   *EventEmitter
+	usage    TokenUsage // accumulated session usage
 }
 
 // NewApp creates a new App instance.
@@ -129,11 +130,25 @@ When helping with coding tasks:
 func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 	switch input {
 	case "/q", "exit", "quit":
+		u := a.GetUsage()
+		if u.TotalTokens > 0 {
+			fmt.Fprintf(a.output, "%sSession usage: %d prompt + %d completion = %d total tokens%s\n",
+				colorGray, u.PromptTokens, u.CompletionTokens, u.TotalTokens, colorReset)
+		}
 		fmt.Fprintln(a.output, "Goodbye!")
 		return true, true
 	case "/c", "clear":
 		a.messages = a.messages[:1]
 		fmt.Fprintln(a.output, "Conversation cleared.")
+		return true, false
+	case "/usage":
+		u := a.GetUsage()
+		if u.TotalTokens == 0 {
+			fmt.Fprintln(a.output, "No tokens used yet.")
+		} else {
+			fmt.Fprintf(a.output, "Session usage:\n  Prompt tokens:     %d\n  Completion tokens: %d\n  Total tokens:      %d\n",
+				u.PromptTokens, u.CompletionTokens, u.TotalTokens)
+		}
 		return true, false
 	case "/skills":
 		if len(a.skills) == 0 {
@@ -224,6 +239,9 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 			a.events.Emit(AgentEvent{Type: EventTurnEnd, Error: agentErr})
 			break
 		}
+
+		// Accumulate token usage
+		a.addUsage(response.Usage)
 
 		// Handle tool calls
 		if len(response.ToolCalls) > 0 {
@@ -328,6 +346,18 @@ func (a *App) defaultOutputHandler(event AgentEvent) {
 	}
 }
 
+// addUsage accumulates token usage from an API response.
+func (a *App) addUsage(u TokenUsage) {
+	a.usage.PromptTokens += u.PromptTokens
+	a.usage.CompletionTokens += u.CompletionTokens
+	a.usage.TotalTokens += u.TotalTokens
+}
+
+// GetUsage returns the accumulated session usage.
+func (a *App) GetUsage() TokenUsage {
+	return a.usage
+}
+
 // GetRegistry returns the tool registry.
 func (a *App) GetRegistry() *ToolRegistry {
 	return a.registry
@@ -369,7 +399,7 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear), /skills\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /usage, /skills\n")
 	if len(app.skills) > 0 {
 		var skillNames []string
 		for _, s := range app.skills {
