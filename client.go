@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/openai/openai-go"
@@ -67,6 +68,15 @@ func (c *Client) Chat(ctx context.Context, messages []Message, toolDefs []map[st
 		return c.chatViaResponses(ctx, messages, toolDefs)
 	}
 	return c.chatViaCompletions(ctx, messages, toolDefs)
+}
+
+// ChatStream sends a streaming chat request. Text deltas are written to w as they
+// arrive. The complete ChatResponse (with any tool calls) is returned when done.
+func (c *Client) ChatStream(ctx context.Context, messages []Message, toolDefs []map[string]interface{}, w io.Writer) (*ChatResponse, error) {
+	if c.apiType == "responses" {
+		return c.chatStreamViaResponses(ctx, messages, toolDefs, w)
+	}
+	return c.chatStreamViaCompletions(ctx, messages, toolDefs, w)
 }
 
 // chatViaCompletions sends a chat completion request using the Chat Completions API.
@@ -292,6 +302,265 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []Message, toolD
 				},
 			})
 		}
+	}
+
+	if len(response.ToolCalls) > 0 {
+		response.FinishReason = "tool_calls"
+	} else {
+		response.FinishReason = "stop"
+	}
+
+	return response, nil
+}
+
+// chatStreamViaCompletions streams a chat completion using the accumulator.
+func (c *Client) chatStreamViaCompletions(ctx context.Context, messages []Message, toolDefs []map[string]interface{}, w io.Writer) (*ChatResponse, error) {
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
+	for i, msg := range messages {
+		switch msg.Role {
+		case "user":
+			openaiMessages[i] = openai.UserMessage(msg.Content)
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				toolCalls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+				for j, tc := range msg.ToolCalls {
+					toolCalls[j] = openai.ChatCompletionMessageToolCallParam{
+						ID:   tc.ID,
+						Type: "function",
+						Function: openai.ChatCompletionMessageToolCallFunctionParam{
+							Name:      tc.Function.Name,
+							Arguments: tc.Function.Arguments,
+						},
+					}
+				}
+				openaiMessages[i] = openai.ChatCompletionMessageParamUnion{
+					OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+						ToolCalls: toolCalls,
+					},
+				}
+			} else {
+				openaiMessages[i] = openai.AssistantMessage(msg.Content)
+			}
+		case "tool":
+			openaiMessages[i] = openai.ToolMessage(msg.Content, msg.ToolCallID)
+		case "system":
+			openaiMessages[i] = openai.SystemMessage(msg.Content)
+		}
+	}
+
+	var tools []openai.ChatCompletionToolParam
+	for _, def := range toolDefs {
+		fn, ok := def["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		params, _ := fn["parameters"].(map[string]interface{})
+		tools = append(tools, openai.ChatCompletionToolParam{
+			Type: "function",
+			Function: shared.FunctionDefinitionParam{
+				Name:        name,
+				Description: openai.String(desc),
+				Parameters:  shared.FunctionParameters(params),
+			},
+		})
+	}
+
+	params := openai.ChatCompletionNewParams{
+		Model:    c.model,
+		Messages: openaiMessages,
+	}
+	if len(tools) > 0 {
+		params.Tools = tools
+	}
+
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+	acc := openai.ChatCompletionAccumulator{}
+
+	for stream.Next() {
+		chunk := stream.Current()
+		acc.AddChunk(chunk)
+
+		// Stream text deltas to writer
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			fmt.Fprint(w, chunk.Choices[0].Delta.Content)
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, wrapAPIError("streaming chat completion failed", err)
+	}
+
+	if len(acc.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in streaming response")
+	}
+
+	choice := acc.Choices[0]
+	response := &ChatResponse{
+		Content:      choice.Message.Content,
+		FinishReason: string(choice.FinishReason),
+	}
+
+	for _, tc := range choice.Message.ToolCalls {
+		response.ToolCalls = append(response.ToolCalls, ToolCall{
+			ID:   tc.ID,
+			Type: string(tc.Type),
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		})
+	}
+
+	return response, nil
+}
+
+// chatStreamViaResponses streams a response using the Responses API.
+func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message, toolDefs []map[string]interface{}, w io.Writer) (*ChatResponse, error) {
+	var instructions string
+	var inputMessages []Message
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			instructions = msg.Content
+		} else {
+			inputMessages = append(inputMessages, msg)
+		}
+	}
+
+	var input responses.ResponseInputParam
+	for _, msg := range inputMessages {
+		switch msg.Role {
+		case "user":
+			input = append(input, responses.ResponseInputItemUnionParam{
+				OfMessage: &responses.EasyInputMessageParam{
+					Role: responses.EasyInputMessageRoleUser,
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(msg.Content),
+					},
+				},
+			})
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				for _, tc := range msg.ToolCalls {
+					input = append(input, responses.ResponseInputItemUnionParam{
+						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
+							CallID:    tc.ID,
+							Name:      tc.Function.Name,
+							Arguments: tc.Function.Arguments,
+						},
+					})
+				}
+			} else {
+				input = append(input, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role: responses.EasyInputMessageRoleAssistant,
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: openai.String(msg.Content),
+						},
+					},
+				})
+			}
+		case "tool":
+			input = append(input, responses.ResponseInputItemUnionParam{
+				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+					CallID: msg.ToolCallID,
+					Output: msg.Content,
+				},
+			})
+		}
+	}
+
+	var tools []responses.ToolUnionParam
+	for _, def := range toolDefs {
+		fn, ok := def["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		params, _ := fn["parameters"].(map[string]interface{})
+		tools = append(tools, responses.ToolUnionParam{
+			OfFunction: &responses.FunctionToolParam{
+				Name:        name,
+				Description: openai.String(desc),
+				Parameters:  params,
+			},
+		})
+	}
+
+	reqParams := responses.ResponseNewParams{
+		Model: c.model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: input,
+		},
+	}
+	if instructions != "" {
+		reqParams.Instructions = openai.String(instructions)
+	}
+	if len(tools) > 0 {
+		reqParams.Tools = tools
+	}
+
+	stream := c.client.Responses.NewStreaming(ctx, reqParams)
+
+	// Track function calls being built during streaming
+	type pendingCall struct {
+		callID string
+		name   string
+		args   string
+	}
+	var pendingCalls []pendingCall
+	var textContent string
+
+	for stream.Next() {
+		event := stream.Current()
+
+		switch event.Type {
+		case "response.output_text.delta":
+			delta := event.Delta.OfString
+			if delta != "" {
+				fmt.Fprint(w, delta)
+				textContent += delta
+			}
+		case "response.output_item.added":
+			if event.Item.Type == "function_call" {
+				pendingCalls = append(pendingCalls, pendingCall{
+					callID: event.Item.CallID,
+					name:   event.Item.Name,
+				})
+			}
+		case "response.function_call_arguments.delta":
+			if len(pendingCalls) > 0 {
+				pendingCalls[len(pendingCalls)-1].args += event.Delta.OfString
+			}
+		case "response.function_call_arguments.done":
+			if len(pendingCalls) > 0 {
+				pendingCalls[len(pendingCalls)-1].args = event.Arguments
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, wrapAPIError("streaming responses API call failed", err)
+	}
+
+	response := &ChatResponse{Content: textContent}
+	for _, pc := range pendingCalls {
+		response.ToolCalls = append(response.ToolCalls, ToolCall{
+			ID:   pc.callID,
+			Type: "function",
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{
+				Name:      pc.name,
+				Arguments: pc.args,
+			},
+		})
 	}
 
 	if len(response.ToolCalls) > 0 {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,145 @@ import (
 	"testing"
 	"time"
 )
+
+// writeSSEResponse converts a standard chat completion response map into SSE
+// streaming format. It breaks the response into chunks: one for content/tool_calls
+// and one for the finish_reason.
+func writeSSEResponse(w http.ResponseWriter, response map[string]interface{}) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, _ := w.(http.Flusher)
+
+	id, _ := response["id"].(string)
+	model, _ := response["model"].(string)
+	created := response["created"]
+
+	choices, _ := response["choices"].([]map[string]interface{})
+	if len(choices) == 0 {
+		return
+	}
+	choice := choices[0]
+	message, _ := choice["message"].(map[string]interface{})
+	finishReason, _ := choice["finish_reason"].(string)
+
+	content, _ := message["content"].(string)
+	toolCalls, hasToolCalls := message["tool_calls"].([]map[string]interface{})
+
+	if hasToolCalls && len(toolCalls) > 0 {
+		// Send tool call chunks: first chunk has role + tool call ids/names
+		firstDelta := map[string]interface{}{
+			"role": "assistant",
+		}
+		var tcDeltas []map[string]interface{}
+		for i, tc := range toolCalls {
+			tcDeltas = append(tcDeltas, map[string]interface{}{
+				"index": i,
+				"id":    tc["id"],
+				"type":  tc["type"],
+				"function": map[string]interface{}{
+					"name":      tc["function"].(map[string]interface{})["name"],
+					"arguments": "",
+				},
+			})
+		}
+		firstDelta["tool_calls"] = tcDeltas
+
+		chunk := map[string]interface{}{
+			"id": id, "object": "chat.completion.chunk",
+			"created": created, "model": model,
+			"choices": []map[string]interface{}{
+				{"index": 0, "delta": firstDelta, "finish_reason": nil},
+			},
+		}
+		data, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		if flusher != nil {
+			flusher.Flush()
+		}
+
+		// Send arguments chunks
+		for i, tc := range toolCalls {
+			args := tc["function"].(map[string]interface{})["arguments"].(string)
+			argChunk := map[string]interface{}{
+				"id": id, "object": "chat.completion.chunk",
+				"created": created, "model": model,
+				"choices": []map[string]interface{}{
+					{
+						"index": 0,
+						"delta": map[string]interface{}{
+							"tool_calls": []map[string]interface{}{
+								{"index": i, "function": map[string]interface{}{"arguments": args}},
+							},
+						},
+						"finish_reason": nil,
+					},
+				},
+			}
+			data, _ := json.Marshal(argChunk)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	} else if content != "" {
+		// Send content chunk
+		chunk := map[string]interface{}{
+			"id": id, "object": "chat.completion.chunk",
+			"created": created, "model": model,
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"delta": map[string]interface{}{
+						"role":    "assistant",
+						"content": content,
+					},
+					"finish_reason": nil,
+				},
+			},
+		}
+		data, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	// Send finish chunk
+	finishChunk := map[string]interface{}{
+		"id": id, "object": "chat.completion.chunk",
+		"created": created, "model": model,
+		"choices": []map[string]interface{}{
+			{"index": 0, "delta": map[string]interface{}{}, "finish_reason": finishReason},
+		},
+	}
+	data, _ := json.Marshal(finishChunk)
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+// isStreamingRequest checks if the request body contains "stream":true.
+func isStreamingRequest(r *http.Request) bool {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return bytes.Contains(body, []byte(`"stream":true`))
+}
+
+// mockRespond writes the response as SSE if streaming, or JSON otherwise.
+func mockRespond(w http.ResponseWriter, r *http.Request, response map[string]interface{}) {
+	if isStreamingRequest(r) {
+		writeSSEResponse(w, response)
+	} else {
+		mockRespond(w, r, response)
+	}
+}
 
 func TestLoadConfig(t *testing.T) {
 	t.Run("missing API key", func(t *testing.T) {
@@ -178,8 +318,7 @@ func TestAppProcessInput(t *testing.T) {
 				},
 			},
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -268,8 +407,7 @@ func TestAppProcessInputWithToolCalls(t *testing.T) {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -323,8 +461,7 @@ func TestAppProcessInputWithInvalidToolArgs(t *testing.T) {
 				},
 			},
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -416,8 +553,7 @@ func TestAppProcessInputConcurrentToolCalls(t *testing.T) {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -569,8 +705,7 @@ func TestConcurrentToolExecutionActuallyParallel(t *testing.T) {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -690,8 +825,7 @@ func TestConcurrentToolCallsWithMixedErrors(t *testing.T) {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 
@@ -763,8 +897,7 @@ func TestTruncateMessages(t *testing.T) {
 				},
 			},
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		mockRespond(w, r, response)
 	}))
 	defer server.Close()
 

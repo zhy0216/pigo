@@ -188,7 +188,7 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	maxIterations := 10
 	completed := false
 	for iterations := 0; iterations < maxIterations; iterations++ {
-		response, err := a.client.Chat(ctx, a.messages, a.registry.GetDefinitions())
+		response, err := a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
 		if err != nil {
 			return fmt.Errorf("chat error: %w", err)
 		}
@@ -272,9 +272,9 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 			continue
 		}
 
-		// No tool calls - print response and break
+		// No tool calls - text was already streamed, add newlines
 		if response.Content != "" {
-			fmt.Fprintf(a.output, "\n%s\n\n", response.Content)
+			fmt.Fprintf(a.output, "\n\n")
 		}
 		a.messages = append(a.messages, Message{
 			Role:    "assistant",
