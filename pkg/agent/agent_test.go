@@ -772,3 +772,92 @@ func TestModelCommand(t *testing.T) {
 		t.Errorf("expected model to be changed to gpt-4o-mini, got: %s", agent.GetModel())
 	}
 }
+
+func TestHandleCommandSessions(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	agent := NewAgent(cfg)
+	buf := &bytes.Buffer{}
+	agent.output = buf
+
+	handled, exit := agent.HandleCommand("/sessions")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /sessions")
+	}
+}
+
+func TestHandleCommandSaveLoad(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	agent := NewAgent(cfg)
+	buf := &bytes.Buffer{}
+	agent.output = buf
+
+	// Save with default name
+	handled, exit := agent.HandleCommand("/save")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /save")
+	}
+
+	// Save with custom name
+	buf.Reset()
+	handled, exit = agent.HandleCommand("/save test-session")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /save test-session")
+	}
+	if !strings.Contains(buf.String(), "test-session") {
+		t.Errorf("expected session name in output, got: %s", buf.String())
+	}
+
+	// Load with missing name
+	buf.Reset()
+	handled, exit = agent.HandleCommand("/load ")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /load")
+	}
+
+	// Load the saved session
+	buf.Reset()
+	handled, exit = agent.HandleCommand("/load test-session")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /load test-session")
+	}
+
+	// Load nonexistent
+	buf.Reset()
+	handled, exit = agent.HandleCommand("/load nonexistent-abc-xyz")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /load nonexistent")
+	}
+}
+
+func TestHandleCommandMemory(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	agent := NewAgent(cfg)
+	buf := &bytes.Buffer{}
+	agent.output = buf
+
+	// Memory when nil
+	agent.Memory = nil
+	handled, exit := agent.HandleCommand("/memory")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /memory")
+	}
+	if !strings.Contains(buf.String(), "No memories") {
+		t.Errorf("expected 'No memories' message, got: %s", buf.String())
+	}
+
+	// Memory clear when nil
+	buf.Reset()
+	handled, exit = agent.HandleCommand("/memory clear")
+	if !handled || exit {
+		t.Error("expected handled=true, exit=false for /memory clear")
+	}
+}
+
+func TestHandleCommandEvents(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	agent := NewAgent(cfg)
+	e := agent.Events()
+	if e == nil {
+		t.Error("expected non-nil EventEmitter")
+	}
+}

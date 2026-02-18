@@ -45,7 +45,7 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - name: Run tests
-        run: go test -v -coverprofile=coverage.out ./...
+        run: go test -v -coverprofile=coverage.out ./pkg/...
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
@@ -100,5 +100,5 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o pigo-${{ matrix.goos }}-${{ matrix.goarch }} .
+          go build -o pigo-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/pigo
           ls -lh pigo-*

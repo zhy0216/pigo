@@ -29,7 +29,7 @@ jobs:
           for os in linux darwin; do
             for arch in amd64 arm64; do
               output="dist/pigo-${os}-${arch}"
-              GOOS=$os GOARCH=$arch go build -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME}" -o "$output" .
+              GOOS=$os GOARCH=$arch go build -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME}" -o "$output" ./cmd/pigo
             done
           done
           ls -lh dist/

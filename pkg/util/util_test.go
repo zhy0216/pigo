@@ -315,6 +315,170 @@ func TestSanitizeEnv(t *testing.T) {
 	}
 }
 
+func TestExtractOptionalString(t *testing.T) {
+	t.Run("present string", func(t *testing.T) {
+		args := map[string]interface{}{"key": "value"}
+		v := ExtractOptionalString(args, "key", "default")
+		if v != "value" {
+			t.Errorf("expected 'value', got '%s'", v)
+		}
+	})
+
+	t.Run("missing key returns default", func(t *testing.T) {
+		args := map[string]interface{}{}
+		v := ExtractOptionalString(args, "key", "default")
+		if v != "default" {
+			t.Errorf("expected 'default', got '%s'", v)
+		}
+	})
+
+	t.Run("wrong type returns default", func(t *testing.T) {
+		args := map[string]interface{}{"key": 42}
+		v := ExtractOptionalString(args, "key", "default")
+		if v != "default" {
+			t.Errorf("expected 'default', got '%s'", v)
+		}
+	})
+}
+
+func TestGetEnvOrDefault(t *testing.T) {
+	t.Run("env set", func(t *testing.T) {
+		t.Setenv("PIGO_TEST_GETENV", "custom")
+		v := GetEnvOrDefault("PIGO_TEST_GETENV", "fallback")
+		if v != "custom" {
+			t.Errorf("expected 'custom', got '%s'", v)
+		}
+	})
+
+	t.Run("env empty returns default", func(t *testing.T) {
+		t.Setenv("PIGO_TEST_GETENV", "")
+		v := GetEnvOrDefault("PIGO_TEST_GETENV", "fallback")
+		if v != "fallback" {
+			t.Errorf("expected 'fallback', got '%s'", v)
+		}
+	})
+
+	t.Run("env unset returns default", func(t *testing.T) {
+		v := GetEnvOrDefault("PIGO_TEST_UNSET_VAR_12345", "fallback")
+		if v != "fallback" {
+			t.Errorf("expected 'fallback', got '%s'", v)
+		}
+	})
+}
+
+func TestRelativizePath(t *testing.T) {
+	t.Run("within base", func(t *testing.T) {
+		v := RelativizePath("/home/user/project/file.go", "/home/user/project")
+		if v != "file.go" {
+			t.Errorf("expected 'file.go', got '%s'", v)
+		}
+	})
+
+	t.Run("nested path", func(t *testing.T) {
+		v := RelativizePath("/home/user/project/pkg/main.go", "/home/user/project")
+		if v != "pkg/main.go" {
+			t.Errorf("expected 'pkg/main.go', got '%s'", v)
+		}
+	})
+
+	t.Run("same path", func(t *testing.T) {
+		v := RelativizePath("/home/user/project", "/home/user/project")
+		if v != "." {
+			t.Errorf("expected '.', got '%s'", v)
+		}
+	})
+}
+
+func TestIsBinaryExtension(t *testing.T) {
+	binaries := []string{"file.exe", "lib.so", "image.png", "photo.jpg", "archive.zip", "doc.pdf", "module.wasm"}
+	for _, name := range binaries {
+		if !IsBinaryExtension(name) {
+			t.Errorf("expected %s to be binary", name)
+		}
+	}
+
+	nonBinaries := []string{"main.go", "readme.md", "config.json", "style.css", "index.html", "script.py"}
+	for _, name := range nonBinaries {
+		if IsBinaryExtension(name) {
+			t.Errorf("expected %s to not be binary", name)
+		}
+	}
+}
+
+func TestStripCodeFence(t *testing.T) {
+	t.Run("json fence", func(t *testing.T) {
+		v := StripCodeFence("```json\n{\"key\": \"value\"}\n```")
+		if v != "{\"key\": \"value\"}" {
+			t.Errorf("expected stripped JSON, got '%s'", v)
+		}
+	})
+
+	t.Run("plain fence", func(t *testing.T) {
+		v := StripCodeFence("```\nhello world\n```")
+		if v != "hello world" {
+			t.Errorf("expected 'hello world', got '%s'", v)
+		}
+	})
+
+	t.Run("no fence", func(t *testing.T) {
+		v := StripCodeFence("just text")
+		if v != "just text" {
+			t.Errorf("expected 'just text', got '%s'", v)
+		}
+	})
+
+	t.Run("only opening fence", func(t *testing.T) {
+		v := StripCodeFence("```\nhello")
+		if v != "hello" {
+			t.Errorf("expected 'hello', got '%s'", v)
+		}
+	})
+}
+
+func TestMapKeys(t *testing.T) {
+	t.Run("empty map", func(t *testing.T) {
+		keys := MapKeys(map[string]bool{})
+		if len(keys) != 0 {
+			t.Errorf("expected empty slice, got %v", keys)
+		}
+	})
+
+	t.Run("non-empty map", func(t *testing.T) {
+		m := map[string]bool{"a": true, "b": false, "c": true}
+		keys := MapKeys(m)
+		if len(keys) != 3 {
+			t.Errorf("expected 3 keys, got %d", len(keys))
+		}
+		found := map[string]bool{}
+		for _, k := range keys {
+			found[k] = true
+		}
+		for _, expected := range []string{"a", "b", "c"} {
+			if !found[expected] {
+				t.Errorf("expected key '%s' in result", expected)
+			}
+		}
+	})
+}
+
+func TestXmlEscape(t *testing.T) {
+	tests := []struct {
+		input, expected string
+	}{
+		{"hello", "hello"},
+		{"<div>", "&lt;div&gt;"},
+		{"a & b", "a &amp; b"},
+		{"say \"hi\"", "say &quot;hi&quot;"},
+		{"<a href=\"x\">y & z</a>", "&lt;a href=&quot;x&quot;&gt;y &amp; z&lt;/a&gt;"},
+	}
+	for _, tc := range tests {
+		got := XmlEscape(tc.input)
+		if got != tc.expected {
+			t.Errorf("XmlEscape(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
 func TestEstimateMessageChars(t *testing.T) {
 	messages := []types.Message{
 		{Content: "hello"},
