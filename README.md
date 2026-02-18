@@ -6,10 +6,13 @@ Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rg
 
 ## Features
 
-- **4 tools**: read, write, edit, bash
+- **10 tools**: read, write, edit, bash, grep, find, ls, memory_recall, memory_remember, memory_forget
 - **OpenAI-compatible API**: Works with OpenAI, OpenRouter, vLLM, or any compatible endpoint
-- **Interactive CLI**: Conversation history, streaming output
-- **Lightweight**: Single binary, ~2MB, no runtime dependencies
+- **Interactive CLI**: Conversation history, streaming output, session persistence
+- **Long-term memory**: Persistent memory with vector similarity search and automatic deduplication
+- **Skills system**: User and project-level skill definitions via Markdown files
+- **Context compaction**: Proactive context management with LLM-generated summaries
+- **Lightweight**: Single binary, no runtime dependencies
 
 ## Installation
 
@@ -17,10 +20,10 @@ Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rg
 # Clone and build
 git clone <repo>
 cd pigo
-go build -o pigo .
+make build
 
 # Or install directly
-go install github.com/user/pigo@latest
+go install github.com/user/pigo/cmd/pigo@latest
 ```
 
 ## Usage
@@ -41,8 +44,8 @@ export PIGO_MODEL="anthropic/claude-3.5-sonnet"
 
 ```
 pigo - minimal AI coding assistant (model: gpt-4o)
-Tools: read, write, edit, bash
-Commands: /q (quit), /c (clear)
+Tools: read, write, edit, bash, grep, find, ls, memory_recall, memory_remember, memory_forget
+Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills, /memory
 
 > Read main.go and explain what it does
 
@@ -50,22 +53,29 @@ Commands: /q (quit), /c (clear)
      1  package main
      2  ...
 
-This is the entry point for pigo. It initializes the OpenAI client,
-registers tools, and runs an interactive CLI loop...
+This is the entry point for pigo. It loads config, creates an agent,
+and runs an interactive CLI loop...
 
-> Add a comment at the top of main.go
-
-[edit] File edited: main.go
-
-Done! I've added a package comment explaining the purpose of the file.
+> Find all test files
+[find] Found 15 results
+...
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `/q` or `exit` | Quit the session |
-| `/c` or `clear` | Clear conversation history |
+| `/q`, `exit`, `quit` | Quit the session |
+| `/c`, `clear` | Clear conversation history |
+| `/model [name]` | Show or change the current model |
+| `/usage` | Show token usage statistics |
+| `/save [name]` | Save the current session |
+| `/load <name>` | Load a saved session |
+| `/sessions` | List saved sessions |
+| `/skills` | List available skills |
+| `/memory` | Show memory statistics |
+| `/memory clear` | Clear all stored memories |
+| `/skill:<name>` | Invoke a skill by name |
 
 ## Environment Variables
 
@@ -74,6 +84,8 @@ Done! I've added a package comment explaining the purpose of the file.
 | `OPENAI_API_KEY` | Yes | - | API key for authentication |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | Custom API endpoint |
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
+| `OPENAI_API_TYPE` | No | `chat` | API mode: `chat` (Chat Completions) or `responses` (Responses API) |
+| `PIGO_EMBED_MODEL` | No | `text-embedding-3-small` | Embedding model for memory search |
 | `PIGO_MEMPROFILE` | No | - | File path to write heap profile on exit |
 
 ## Tools
@@ -116,7 +128,7 @@ Replace text in a file. Fails if old_string is not found or not unique.
 
 ### bash
 
-Execute a shell command with timeout.
+Execute a shell command with timeout (default 120s). Sensitive environment variables are stripped.
 
 ```json
 {
@@ -125,25 +137,127 @@ Execute a shell command with timeout.
 }
 ```
 
+### grep
+
+Search file contents with regex. Uses `rg` (ripgrep) if available, falls back to native Go.
+
+```json
+{
+  "pattern": "func\\s+main",
+  "path": "/project",
+  "include": "*.go",
+  "context_lines": 2
+}
+```
+
+### find
+
+Find files by glob pattern. Uses `fd`/`fdfind` if available, falls back to native Go.
+
+```json
+{
+  "pattern": "*.go",
+  "path": "/project",
+  "type": "file"
+}
+```
+
+### ls
+
+List directory contents with type indicators.
+
+```json
+{
+  "path": "/project",
+  "all": false
+}
+```
+
+### memory_recall
+
+Search long-term memory by vector similarity and keyword matching.
+
+```json
+{
+  "query": "user prefers tabs over spaces",
+  "category": "preferences",
+  "top_k": 5
+}
+```
+
+### memory_remember
+
+Explicitly save a memory with automatic deduplication.
+
+```json
+{
+  "category": "preferences",
+  "abstract": "User prefers tabs",
+  "overview": "User stated preference for tabs over spaces in Go code",
+  "content": "During session on 2026-01-15, user explicitly asked to use tabs..."
+}
+```
+
+### memory_forget
+
+Delete a memory by ID.
+
+```json
+{
+  "id": "mem_abc123"
+}
+```
+
 ## Architecture
 
 ```
 pigo/
-├── main.go          # CLI entry point
-├── client.go        # OpenAI API client
-├── tools.go         # Tool interface and registry
-├── result.go        # ToolResult type
-├── utils.go         # Helper functions
-├── tool_read.go     # read tool
-├── tool_write.go    # write tool
-├── tool_edit.go     # edit tool
-└── tool_bash.go     # bash tool
+├── cmd/pigo/
+│   └── main.go              # CLI entry point, signal handling
+├── pkg/
+│   ├── agent/
+│   │   ├── agent.go          # Agent struct, config, ProcessInput loop
+│   │   └── compaction.go     # Proactive context compaction
+│   ├── llm/
+│   │   └── client.go         # OpenAI client (chat + responses API, streaming, embeddings)
+│   ├── memory/
+│   │   ├── store.go          # Persistent JSONL memory store with vector search
+│   │   ├── extractor.go      # LLM-based memory extraction from compacted messages
+│   │   ├── deduplicator.go   # Vector similarity + LLM deduplication
+│   │   └── tools.go          # memory_recall, memory_remember, memory_forget tools
+│   ├── ops/
+│   │   └── ops.go            # FileOps/ExecOps interfaces for testability
+│   ├── session/
+│   │   └── session.go        # JSONL session persistence (~/.pigo/sessions/)
+│   ├── skills/
+│   │   └── skills.go         # Skill loading from ~/.pigo/skills/ and ./.pigo/skills/
+│   ├── tools/
+│   │   ├── registry.go       # Tool registry (thread-safe)
+│   │   ├── read.go           # read tool
+│   │   ├── write.go          # write tool
+│   │   ├── edit.go           # edit tool
+│   │   ├── bash.go           # bash tool
+│   │   ├── grep.go           # grep tool
+│   │   ├── find.go           # find tool
+│   │   └── ls.go             # ls tool
+│   ├── types/
+│   │   ├── constants.go      # All numeric constants and limits
+│   │   ├── colors.go         # ANSI terminal colors
+│   │   ├── tool.go           # Tool interface
+│   │   ├── result.go         # ToolResult type
+│   │   ├── message.go        # Message, ToolCall, ChatResponse types
+│   │   └── events.go         # EventEmitter (pub-sub, thread-safe)
+│   └── util/
+│       └── util.go           # Path validation, formatting, truncation helpers
+├── docs/reference/            # Reference TypeScript implementation
+├── Makefile
+└── go.mod
 ```
 
 Design patterns from [picoclaw](https://github.com/sipeed/picoclaw):
 - `Tool` interface with `Name()`, `Description()`, `Parameters()`, `Execute()`
 - `ToolResult` with `ForLLM`, `ForUser`, `Silent`, `IsError`
-- `ToolRegistry` for tool management
+- `ToolRegistry` for thread-safe tool management
 
 ## Development
 
