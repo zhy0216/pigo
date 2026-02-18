@@ -8,10 +8,10 @@ LDFLAGS = -s -w -X main.Version=$(VERSION)
 ## Build & Run
 
 build: ## Build the binary
-	go build -ldflags '$(LDFLAGS)' -o $(BINARY) .
+	go build -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/pigo
 
 run: ## Run from source
-	go run .
+	go run ./cmd/pigo
 
 clean: ## Remove build artifacts and profiles
 	rm -f $(BINARY) *.prof coverage.out
@@ -35,10 +35,10 @@ test-cover: ## Run tests with coverage report
 lint: fmt vet ## Run all linters (fmt + vet)
 
 fmt: ## Check formatting
-	@test -z "$$(gofmt -l .)" || (gofmt -d . && exit 1)
+	@test -z "$$(gofmt -l cmd/ pkg/)" || (gofmt -d cmd/ pkg/ && exit 1)
 
 vet: ## Run go vet
-	go vet ./...
+	go vet ./cmd/... ./pkg/...
 
 ## Profiling
 
