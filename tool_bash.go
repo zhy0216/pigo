@@ -47,7 +47,7 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(err.Error())
 	}
 
-	timeout := extractInt(args, "timeout", 120)
+	timeout := extractInt(args, "timeout", bashDefaultTimeout)
 	if timeout <= 0 {
 		return ErrorResult("timeout must be a positive number")
 	}
@@ -79,7 +79,7 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	// Truncate long output — keep tail for bash (errors/exit status are at the end)
-	output = truncateTail(output, 10000)
+	output = truncateTail(output, bashMaxOutput)
 
 	if runErr != nil || exitCode != 0 {
 		return &ToolResult{

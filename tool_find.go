@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	findMaxResults = 1000
-	findMaxBytes   = 50 * 1024 // 50KB
-)
-
 // FindTool discovers files matching a glob pattern using fd or a Go fallback.
 type FindTool struct {
 	allowedDir string

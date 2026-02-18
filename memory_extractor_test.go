@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -42,16 +43,16 @@ func TestFormatMessagesForExtraction(t *testing.T) {
 	if result == "" {
 		t.Error("expected non-empty result")
 	}
-	if !findSubstring(result, "User: Hello world") {
+	if !strings.Contains(result, "User: Hello world") {
 		t.Error("should contain user message")
 	}
-	if !findSubstring(result, "Assistant: Hi there") {
+	if !strings.Contains(result, "Assistant: Hi there") {
 		t.Error("should contain assistant message")
 	}
-	if !findSubstring(result, "Tool call: read") {
+	if !strings.Contains(result, "Tool call: read") {
 		t.Error("should contain tool call")
 	}
-	if !findSubstring(result, "Tool result: file contents here") {
+	if !strings.Contains(result, "Tool result: file contents here") {
 		t.Error("should contain tool result")
 	}
 }

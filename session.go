@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-const (
-	sessionsDir = ".pigo/sessions"
-)
-
 // SessionEntry represents a single message persisted to a session file.
 type SessionEntry struct {
 	Timestamp time.Time `json:"timestamp"`

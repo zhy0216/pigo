@@ -8,17 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	// maxReadFileSize is the maximum file size that ReadTool will load (10 MB).
-	maxReadFileSize = 10 * 1024 * 1024
-
-	// maxContextChars is the approximate character budget for the message history.
-	maxContextChars = 200000
-
-	// minKeepMessages is the minimum number of recent messages to preserve during truncation.
-	minKeepMessages = 10
-)
-
 // sensitiveEnvPrefixes lists environment variable prefixes that should be
 // stripped from child process environments to avoid leaking secrets.
 var sensitiveEnvPrefixes = []string{
@@ -86,8 +75,8 @@ func formatWithLineNumbers(content string, offset, limit int) string {
 
 		line := scanner.Text()
 		// Truncate long lines
-		if len(line) > 500 {
-			line = line[:500] + "..."
+		if len(line) > maxLineLength {
+			line = line[:maxLineLength] + "..."
 		}
 		fmt.Fprintf(&result, "%6d\t%s\n", lineNum, line)
 		linesOutput++

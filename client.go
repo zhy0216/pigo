@@ -609,17 +609,19 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message,
 }
 
 // Embed generates an embedding vector for the given text using the OpenAI Embeddings API.
-// Uses text-embedding-3-small model (1536 dimensions).
+// Model is configured via PIGO_EMBED_MODEL env var (default: text-embedding-3-small).
 func (c *Client) Embed(ctx context.Context, text string) ([]float64, error) {
 	if text == "" {
 		return nil, fmt.Errorf("cannot embed empty text")
 	}
 
+	embedModel := GetEnvOrDefault("PIGO_EMBED_MODEL", string(openai.EmbeddingModelTextEmbedding3Small))
+
 	resp, err := c.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
 		Input: openai.EmbeddingNewParamsInputUnion{
 			OfString: openai.String(text),
 		},
-		Model: openai.EmbeddingModelTextEmbedding3Small,
+		Model: openai.EmbeddingModel(embedModel),
 	})
 	if err != nil {
 		return nil, wrapAPIError("embedding failed", err)
@@ -659,9 +661,6 @@ func wrapAPIError(context string, err error) error {
 	}
 	return fmt.Errorf("%s: %w", context, err)
 }
-
-// maxOverflowRetries is the number of times to retry after context overflow.
-const maxOverflowRetries = 2
 
 // isContextOverflow checks if an error indicates that the request exceeded
 // the model's context window. It looks for HTTP 400/413 status codes combined

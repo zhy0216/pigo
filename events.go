@@ -24,10 +24,17 @@ type AgentEvent struct {
 	Error    error  // set for TurnEnd/AgentEnd on failure
 }
 
+// subscriber is an identified event callback.
+type subscriber struct {
+	id uint64
+	fn func(AgentEvent)
+}
+
 // EventEmitter provides a simple pub-sub mechanism for agent events.
 type EventEmitter struct {
-	mu          sync.RWMutex
-	subscribers []func(AgentEvent)
+	mu     sync.RWMutex
+	subs   []subscriber
+	nextID uint64
 }
 
 // NewEventEmitter creates a new EventEmitter.
@@ -36,17 +43,23 @@ func NewEventEmitter() *EventEmitter {
 }
 
 // Subscribe registers a callback to receive events. Returns an unsubscribe
-// function (not commonly needed, but available).
+// function that safely removes the callback by ID.
 func (e *EventEmitter) Subscribe(fn func(AgentEvent)) func() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	idx := len(e.subscribers)
-	e.subscribers = append(e.subscribers, fn)
+	id := e.nextID
+	e.nextID++
+	e.subs = append(e.subs, subscriber{id: id, fn: fn})
 	return func() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		if idx < len(e.subscribers) {
-			e.subscribers[idx] = nil
+		for i, s := range e.subs {
+			if s.id == id {
+				// Remove by swapping with last element to avoid O(n) shifts.
+				e.subs[i] = e.subs[len(e.subs)-1]
+				e.subs = e.subs[:len(e.subs)-1]
+				break
+			}
 		}
 	}
 }
@@ -55,9 +68,7 @@ func (e *EventEmitter) Subscribe(fn func(AgentEvent)) func() {
 func (e *EventEmitter) Emit(event AgentEvent) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	for _, fn := range e.subscribers {
-		if fn != nil {
-			fn(event)
-		}
+	for _, s := range e.subs {
+		s.fn(event)
 	}
 }

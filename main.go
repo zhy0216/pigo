@@ -317,7 +317,7 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 	a.events.Emit(AgentEvent{Type: EventAgentStart})
 
 	// Agent loop
-	maxIterations := 10
+	maxIterations := maxAgentIterations
 	completed := false
 	var agentErr error
 	for iterations := 0; iterations < maxIterations; iterations++ {

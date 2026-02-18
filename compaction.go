@@ -7,23 +7,22 @@ import (
 	"strings"
 )
 
-const (
-	// keepRecentChars is the approximate character budget for recent messages
-	// to preserve during compaction (~80K chars).
-	keepRecentChars = 80000
-)
-
 // compactMessages performs smart context compaction: walks backward from the
 // newest messages with a character budget, finds a valid cut point, summarizes
 // discarded messages via LLM, and preserves file operation metadata.
 // Falls back to naive truncation if LLM summarization fails.
+//
+// Compaction triggers proactively at proactiveCompactThreshold (80%) of
+// maxContextChars rather than waiting for the hard limit, reducing the
+// likelihood of context overflow errors during API calls.
 func (a *App) compactMessages(ctx context.Context) {
 	if len(a.messages) <= minKeepMessages+1 {
 		return
 	}
 
 	total := estimateMessageChars(a.messages)
-	if total <= maxContextChars {
+	threshold := int(float64(maxContextChars) * proactiveCompactThreshold)
+	if total <= threshold {
 		return
 	}
 

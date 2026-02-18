@@ -12,12 +12,6 @@ import (
 	"strings"
 )
 
-const (
-	grepMaxMatches = 100
-	grepMaxBytes   = 50 * 1024 // 50KB
-	grepMaxLine    = 500
-)
-
 // GrepTool searches files for patterns using ripgrep or a Go fallback.
 type GrepTool struct {
 	allowedDir string
