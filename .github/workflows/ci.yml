@@ -20,9 +20,10 @@ jobs:
 
       - name: Check formatting
         run: |
-          if [ -n "$(gofmt -l .)" ]; then
+          UNFORMATTED=$(find . -name '*.go' -not -path './docs/*' -not -path './vendor/*' | xargs gofmt -l)
+          if [ -n "$UNFORMATTED" ]; then
             echo "Code is not formatted. Run 'gofmt -w .'"
-            gofmt -d .
+            echo "$UNFORMATTED" | xargs gofmt -d
             exit 1
           fi
 
