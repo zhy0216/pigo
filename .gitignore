@@ -10,6 +10,7 @@
 # Test artifacts
 *.test
 coverage.out
+coverage_pkg.out
 .env
 mem.prof
 .DS_Store
