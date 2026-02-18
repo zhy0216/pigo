@@ -90,10 +90,12 @@ func LoadSession(id string) ([]Message, error) {
 	scanner := bufio.NewScanner(f)
 	// Allow large lines (up to 1MB)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		var entry SessionEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			continue // skip malformed lines
+			return nil, fmt.Errorf("malformed session entry on line %d: %w", lineNum, err)
 		}
 		messages = append(messages, entry.Message)
 	}

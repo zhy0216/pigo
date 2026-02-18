@@ -280,15 +280,25 @@ func (a *App) ProcessInput(ctx context.Context, input string) error {
 		// Retry loop for context overflow errors
 		var response *ChatResponse
 		var chatErr error
+		var savedMessages []Message
 		for retries := 0; retries <= maxOverflowRetries; retries++ {
 			response, chatErr = a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
 			if chatErr == nil {
 				break
 			}
 			if !isContextOverflow(chatErr) || retries == maxOverflowRetries {
+				// Non-overflow error or exhausted retries: restore messages
+				// so the user doesn't lose context from a failed attempt.
+				if savedMessages != nil {
+					a.messages = savedMessages
+				}
 				break
 			}
-			// Context overflow: force truncation and retry
+			// Context overflow: save snapshot before first truncation
+			if savedMessages == nil {
+				savedMessages = make([]Message, len(a.messages))
+				copy(savedMessages, a.messages)
+			}
 			fmt.Fprintf(a.output, "%s[context overflow, compacting and retrying...]%s\n", colorYellow, colorReset)
 			a.truncateMessages()
 		}
@@ -479,11 +489,12 @@ func main() {
 
 	go func() {
 		for sig := range sigChan {
+			mu.Lock()
 			if sig == syscall.SIGTERM {
+				mu.Unlock()
 				fmt.Println("\nGoodbye!")
 				os.Exit(0)
 			}
-			mu.Lock()
 			now := time.Now()
 			if now.Sub(lastSigTime) < time.Second {
 				mu.Unlock()

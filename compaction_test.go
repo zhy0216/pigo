@@ -21,6 +21,8 @@ func TestExtractPathFromArgs(t *testing.T) {
 		{"no path", `{"command": "ls"}`, ""},
 		{"empty", `{}`, ""},
 		{"nested", `{"path":"/tmp/test.txt","content":"hello"}`, "/tmp/test.txt"},
+		{"invalid json", `not json`, ""},
+		{"escaped quotes in path", `{"path":"/tmp/file\"name\".txt"}`, `/tmp/file"name".txt`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -101,6 +103,40 @@ func TestFindCutPoint(t *testing.T) {
 	}
 	if cut >= len(app.messages) {
 		t.Errorf("cut point should be less than total messages, got %d of %d", cut, len(app.messages))
+	}
+}
+
+func TestFindCutPointAllToolMessages(t *testing.T) {
+	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	app := NewApp(cfg)
+	app.output = &bytes.Buffer{}
+
+	// System prompt + large messages forcing a cut, then only tool messages remain
+	app.messages = []Message{
+		{Role: "system", Content: "system prompt"},
+	}
+	// Add enough data to push past the character budget
+	for i := 0; i < 20; i++ {
+		app.messages = append(app.messages,
+			Message{Role: "user", Content: strings.Repeat("x", 5000)},
+			Message{Role: "assistant", Content: strings.Repeat("y", 5000)},
+		)
+	}
+	// End with several tool messages
+	for i := 0; i < 5; i++ {
+		app.messages = append(app.messages,
+			Message{Role: "tool", Content: "result", ToolCallID: fmt.Sprintf("call_%d", i)},
+		)
+	}
+
+	cut := app.findCutPoint()
+	// Should not panic, and should return a valid index
+	if cut < 0 || cut > len(app.messages) {
+		t.Errorf("cut point out of range: %d (messages: %d)", cut, len(app.messages))
+	}
+	// If cut lands on 0, it means nothing to compact — that's acceptable
+	if cut > 0 && cut < len(app.messages) && app.messages[cut].Role == "tool" {
+		t.Errorf("cut point should not land on a tool message, got index %d", cut)
 	}
 }
 

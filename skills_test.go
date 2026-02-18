@@ -87,6 +87,16 @@ func TestParseFrontmatter(t *testing.T) {
 			},
 			wantBody: "Body",
 		},
+		{
+			name:  "field after multiline description is parsed",
+			input: "---\nname: multi\ndescription: |\n  line one\n  line two\ndisable-model-invocation: true\n---\nBody",
+			wantFM: SkillFrontmatter{
+				Name:                   "multi",
+				Description:            "line one line two",
+				DisableModelInvocation: true,
+			},
+			wantBody: "Body",
+		},
 	}
 
 	for _, tt := range tests {

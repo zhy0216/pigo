@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -97,12 +98,13 @@ func (a *App) findCutPoint() int {
 	// A tool result message (role=="tool") must be preceded by its assistant
 	// message with tool_calls. Walk forward from the cut point to find a
 	// clean boundary.
-	for i < n {
-		if a.messages[i].Role == "tool" {
-			i++
-			continue
-		}
-		break
+	for i < n && a.messages[i].Role == "tool" {
+		i++
+	}
+
+	// If we walked past all messages, there's nothing to compact.
+	if i >= n {
+		return 0
 	}
 
 	return i
@@ -145,25 +147,15 @@ func extractFileOps(messages []Message) string {
 	return strings.Join(parts, "\n")
 }
 
-// extractPathFromArgs tries to extract a "path" field from JSON arguments.
+// extractPathFromArgs extracts a "path" field from JSON arguments.
 func extractPathFromArgs(args string) string {
-	// Simple extraction without full JSON parse — look for "path":"..."
-	idx := strings.Index(args, `"path"`)
-	if idx < 0 {
+	var parsed struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
 		return ""
 	}
-	rest := args[idx+6:]
-	// Skip whitespace and colon
-	rest = strings.TrimLeft(rest, " \t\n:")
-	if len(rest) == 0 || rest[0] != '"' {
-		return ""
-	}
-	rest = rest[1:]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
-		return ""
-	}
-	return rest[:end]
+	return parsed.Path
 }
 
 // summarizeMessages uses the LLM to create a compact summary of discarded
