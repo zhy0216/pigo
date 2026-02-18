@@ -39,6 +39,9 @@ func (a *App) compactMessages(ctx context.Context) {
 		return
 	}
 
+	// Extract memories from discarded messages before they are lost
+	a.extractMemories(ctx, discarded)
+
 	// Extract file operations from discarded messages
 	fileOps := extractFileOps(discarded)
 

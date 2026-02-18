@@ -57,6 +57,7 @@ type App struct {
 	skills   []Skill
 	events   *EventEmitter
 	usage    TokenUsage // accumulated session usage
+	memory   *MemoryStore
 }
 
 // NewApp creates a new App instance.
@@ -93,6 +94,12 @@ func NewApp(cfg *Config) *App {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
 	}
 
+	// Load persistent memory
+	memStore := NewMemoryStore()
+	if err := memStore.Load(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to load memories: %v\n", err)
+	}
+
 	systemPrompt := `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
 
 When helping with coding tasks:
@@ -102,6 +109,14 @@ When helping with coding tasks:
 4. Be concise in your explanations`
 
 	systemPrompt += formatSkillsForPrompt(skills)
+
+	// Inject persistent memories into system prompt
+	if memStore.Count() > 0 {
+		memContext := memStore.FormatForPrompt(20)
+		if memContext != "" {
+			systemPrompt += "\n\n## Your Memories\nThe following are memories from previous sessions:\n\n" + memContext
+		}
+	}
 
 	messages := []Message{
 		{
@@ -119,7 +134,13 @@ When helping with coding tasks:
 		output:   os.Stdout,
 		skills:   skills,
 		events:   events,
+		memory:   memStore,
 	}
+
+	// Register memory tools (need app reference)
+	registry.Register(NewMemoryRecallTool(app))
+	registry.Register(NewMemoryRememberTool(app))
+	registry.Register(NewMemoryForgetTool(app))
 
 	// Register default output subscriber
 	events.Subscribe(app.defaultOutputHandler)
@@ -177,6 +198,23 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 			}
 		}
 		return true, false
+	case "/memory":
+		if a.memory == nil || a.memory.Count() == 0 {
+			fmt.Fprintln(a.output, "No memories stored.")
+		} else {
+			fmt.Fprintf(a.output, "Stored memories (%d total):\n", a.memory.Count())
+			for _, cat := range ValidCategories {
+				mems := a.memory.List(cat)
+				if len(mems) == 0 {
+					continue
+				}
+				fmt.Fprintf(a.output, "\n  [%s] (%d)\n", cat, len(mems))
+				for _, m := range mems {
+					fmt.Fprintf(a.output, "    %s  %s\n", m.ID, m.Abstract)
+				}
+			}
+		}
+		return true, false
 	}
 
 	// Commands with arguments
@@ -216,6 +254,14 @@ func (a *App) HandleCommand(input string) (handled bool, exit bool) {
 		} else {
 			a.client.SetModel(newModel)
 			fmt.Fprintf(a.output, "Model changed to: %s\n", newModel)
+		}
+		return true, false
+	}
+	if input == "/memory clear" {
+		if a.memory != nil {
+			a.memory.Clear()
+			a.memory.Save()
+			fmt.Fprintln(a.output, "All memories cleared.")
 		}
 		return true, false
 	}
@@ -468,7 +514,7 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", colorGreen, colorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills, /memory\n")
 	if len(app.skills) > 0 {
 		var skillNames []string
 		for _, s := range app.skills {

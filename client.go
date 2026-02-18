@@ -608,6 +608,30 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []Message,
 	return response, nil
 }
 
+// Embed generates an embedding vector for the given text using the OpenAI Embeddings API.
+// Uses text-embedding-3-small model (1536 dimensions).
+func (c *Client) Embed(ctx context.Context, text string) ([]float64, error) {
+	if text == "" {
+		return nil, fmt.Errorf("cannot embed empty text")
+	}
+
+	resp, err := c.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
+		Input: openai.EmbeddingNewParamsInputUnion{
+			OfString: openai.String(text),
+		},
+		Model: openai.EmbeddingModelTextEmbedding3Small,
+	})
+	if err != nil {
+		return nil, wrapAPIError("embedding failed", err)
+	}
+
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no embedding data in response")
+	}
+
+	return resp.Data[0].Embedding, nil
+}
+
 // GetModel returns the model name.
 func (c *Client) GetModel() string {
 	return c.model
