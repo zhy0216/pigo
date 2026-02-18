@@ -210,10 +210,6 @@ func (t *GrepTool) executeNative(pattern, searchPath, include string, contextLin
 			return nil
 		}
 		if d.IsDir() {
-			name := d.Name()
-			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 

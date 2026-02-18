@@ -12,18 +12,17 @@ Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rg
 - **Long-term memory**: Persistent memory with vector similarity search and automatic deduplication
 - **Skills system**: User and project-level skill definitions via Markdown files
 - **Context compaction**: Proactive context management with LLM-generated summaries
-- **Lightweight**: Single binary, no runtime dependencies
 
 ## Installation
 
 ```bash
 # Clone and build
-git clone <repo>
+git clone https://github.com/zhy0216/pigo.git
 cd pigo
 make build
 
 # Or install directly
-go install github.com/user/pigo/cmd/pigo@latest
+go install github.com/zhy0216/pigo/cmd/pigo@latest
 ```
 
 ## Usage
@@ -139,7 +138,7 @@ Execute a shell command with timeout (default 120s). Sensitive environment varia
 
 ### grep
 
-Search file contents with regex. Uses `rg` (ripgrep) if available, falls back to native Go.
+Search file contents with regex. Requires [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) to be installed.
 
 ```json
 {
