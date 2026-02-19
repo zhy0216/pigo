@@ -1,5 +1,7 @@
 package hooks
 
+import "strings"
+
 // PluginConfig defines a plugin with its hooks.
 type PluginConfig struct {
 	Name    string                  `json:"name"`
@@ -50,4 +52,17 @@ func NewHookManager(plugins []PluginConfig) *HookManager {
 		active = append(active, p)
 	}
 	return &HookManager{plugins: active}
+}
+
+// matchesRule checks if a hook's match rule applies to the given tool name.
+func matchesRule(rule *MatchRule, toolName string) bool {
+	if rule == nil || rule.Tool == "" {
+		return true
+	}
+	for _, t := range strings.Split(rule.Tool, "|") {
+		if t == toolName {
+			return true
+		}
+	}
+	return false
 }

@@ -25,3 +25,28 @@ func TestNewHookManager_skipsDisabled(t *testing.T) {
 		t.Errorf("expected plugin 'active', got %q", mgr.plugins[0].Name)
 	}
 }
+
+func TestMatchRule_matches(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     *MatchRule
+		toolName string
+		want     bool
+	}{
+		{"nil rule matches all", nil, "bash", true},
+		{"exact match", &MatchRule{Tool: "bash"}, "bash", true},
+		{"exact no match", &MatchRule{Tool: "bash"}, "read", false},
+		{"pipe match first", &MatchRule{Tool: "bash|write"}, "bash", true},
+		{"pipe match second", &MatchRule{Tool: "bash|write"}, "write", true},
+		{"pipe no match", &MatchRule{Tool: "bash|write"}, "read", false},
+		{"empty tool field matches all", &MatchRule{Tool: ""}, "bash", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesRule(tt.rule, tt.toolName)
+			if got != tt.want {
+				t.Errorf("matchesRule(%v, %q) = %v, want %v", tt.rule, tt.toolName, got, tt.want)
+			}
+		})
+	}
+}
