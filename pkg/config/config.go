@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/user/pigo/pkg/hooks"
 )
 
 // Config holds the application configuration.
@@ -13,14 +15,16 @@ type Config struct {
 	BaseURL string
 	Model   string
 	APIType string // "chat" or "responses"
+	Plugins []hooks.PluginConfig
 }
 
 // fileConfig maps to the JSON config file structure.
 type fileConfig struct {
-	APIKey  string `json:"api_key,omitempty"`
-	BaseURL string `json:"base_url,omitempty"`
-	Model   string `json:"model,omitempty"`
-	APIType string `json:"api_type,omitempty"`
+	APIKey  string               `json:"api_key,omitempty"`
+	BaseURL string               `json:"base_url,omitempty"`
+	Model   string               `json:"model,omitempty"`
+	APIType string               `json:"api_type,omitempty"`
+	Plugins []hooks.PluginConfig `json:"plugins,omitempty"`
 }
 
 // resolve returns the first non-empty value from the provided strings.
@@ -47,6 +51,7 @@ func Load() (*Config, error) {
 		BaseURL: resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
 		Model:   resolve(fc.Model, os.Getenv("PIGO_MODEL"), "gpt-4o"),
 		APIType: resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
+		Plugins: fc.Plugins,
 	}
 
 	if cfg.APIKey == "" {

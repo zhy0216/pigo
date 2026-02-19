@@ -185,6 +185,40 @@ func TestLoadMalformedConfigFile(t *testing.T) {
 	}
 }
 
+func TestLoadWithPlugins(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	configJSON := `{
+		"plugins": [
+			{
+				"name": "test-plugin",
+				"hooks": {
+					"tool_start": [
+						{"command": "echo hello", "blocking": true, "timeout": 5}
+					]
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(cfg.Plugins))
+	}
+	if cfg.Plugins[0].Name != "test-plugin" {
+		t.Errorf("plugin name = %q, want %q", cfg.Plugins[0].Name, "test-plugin")
+	}
+}
+
 func TestResolve(t *testing.T) {
 	tests := []struct {
 		name   string
