@@ -142,6 +142,7 @@ func runBlocking(ctx context.Context, command string, env []string, dir string, 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Env = env
 	cmd.Dir = dir
+	cmd.WaitDelay = 500 * time.Millisecond
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))

@@ -210,6 +210,9 @@ func (t *GrepTool) executeNative(pattern, searchPath, include string, contextLin
 			return nil
 		}
 		if d.IsDir() {
+			if d.Name() != "." && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
