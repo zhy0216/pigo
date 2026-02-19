@@ -498,3 +498,349 @@ func TestSetModel(t *testing.T) {
 		t.Errorf("expected gpt-3.5-turbo, got %s", client.GetModel())
 	}
 }
+
+func TestChatStreamViaCompletions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("expected flusher")
+			return
+		}
+
+		chunks := []string{
+			`{"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-stream1","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
+		}
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			flusher.Flush()
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	t.Run("text streaming", func(t *testing.T) {
+		client := NewClient("test-key", server.URL, "gpt-4", "chat")
+		messages := []types.Message{
+			{Role: "user", Content: "Hello"},
+		}
+
+		var buf strings.Builder
+		resp, err := client.ChatStream(context.Background(), messages, nil, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(buf.String(), "Hello") {
+			t.Errorf("expected streamed text to contain 'Hello', got '%s'", buf.String())
+		}
+		if resp.FinishReason != "stop" {
+			t.Errorf("expected finish_reason 'stop', got '%s'", resp.FinishReason)
+		}
+	})
+}
+
+func TestChatStreamViaCompletionsWithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		chunks := []string{
+			`{"id":"chatcmpl-tc","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_s1","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-tc","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":\"/tmp/t.txt\"}"}}]},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-tc","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+		}
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			flusher.Flush()
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL, "gpt-4", "chat")
+	messages := []types.Message{
+		{Role: "system", Content: "You are helpful"},
+		{Role: "user", Content: "Read /tmp/t.txt"},
+	}
+	toolDefs := []map[string]interface{}{
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "read",
+				"description": "Read a file",
+				"parameters":  map[string]interface{}{"type": "object"},
+			},
+		},
+	}
+
+	var buf strings.Builder
+	resp, err := client.ChatStream(context.Background(), messages, toolDefs, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Function.Name != "read" {
+		t.Errorf("expected tool name 'read', got '%s'", resp.ToolCalls[0].Function.Name)
+	}
+}
+
+func TestChatStreamViaCompletionsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": {"message": "server error"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL, "gpt-4", "chat")
+	var buf strings.Builder
+	_, err := client.ChatStream(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, nil, &buf)
+	if err == nil {
+		t.Error("expected error for server failure")
+	}
+}
+
+func TestChatStreamViaResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		events := []string{
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi \"}\n\n",
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"there!\"}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"total_tokens\":15}}}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, ev := range events {
+			fmt.Fprint(w, ev)
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+	messages := []types.Message{
+		{Role: "system", Content: "Be helpful"},
+		{Role: "user", Content: "Hi"},
+	}
+
+	var buf strings.Builder
+	resp, err := client.ChatStream(context.Background(), messages, nil, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Hi ") {
+		t.Errorf("expected streamed 'Hi ', got '%s'", buf.String())
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("expected finish_reason 'stop', got '%s'", resp.FinishReason)
+	}
+}
+
+func TestChatStreamViaResponsesWithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		events := []string{
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"call_id\":\"call_r1\",\"name\":\"read\"}}\n\n",
+			"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"path\\\"\"}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"arguments\":\"{\\\"path\\\":\\\"/tmp/test\\\"}\"}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":8,\"output_tokens\":3,\"total_tokens\":11}}}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, ev := range events {
+			fmt.Fprint(w, ev)
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+	messages := []types.Message{
+		{Role: "user", Content: "Read /tmp/test"},
+	}
+	toolDefs := []map[string]interface{}{
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "read",
+				"description": "Read a file",
+				"parameters":  map[string]interface{}{"type": "object"},
+			},
+		},
+	}
+
+	var buf strings.Builder
+	resp, err := client.ChatStream(context.Background(), messages, toolDefs, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Function.Name != "read" {
+		t.Errorf("expected 'read', got '%s'", resp.ToolCalls[0].Function.Name)
+	}
+	if resp.FinishReason != "tool_calls" {
+		t.Errorf("expected 'tool_calls', got '%s'", resp.FinishReason)
+	}
+}
+
+func TestChatStreamViaResponsesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": {"message": "server error"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+	var buf strings.Builder
+	_, err := client.ChatStream(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, nil, &buf)
+	if err == nil {
+		t.Error("expected error for server failure")
+	}
+}
+
+func TestChatStreamWithAllMessageTypes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		chunks := []string{
+			`{"id":"chatcmpl-msg","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-msg","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		}
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			flusher.Flush()
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL, "gpt-4", "chat")
+	// Include all message types: system, user, assistant with tool calls, tool result
+	messages := []types.Message{
+		{Role: "system", Content: "Be helpful"},
+		{Role: "user", Content: "Read file"},
+		{Role: "assistant", ToolCalls: []types.ToolCall{
+			{ID: "call_1", Type: "function", Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: "read", Arguments: `{"path":"/tmp/x"}`}},
+		}},
+		{Role: "tool", Content: "file contents", ToolCallID: "call_1"},
+		{Role: "user", Content: "Summarize that"},
+	}
+
+	var buf strings.Builder
+	resp, err := client.ChatStream(context.Background(), messages, nil, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "OK" {
+		t.Errorf("expected 'OK', got '%s'", resp.Content)
+	}
+}
+
+func TestChatCompletionWithMalformedToolDef(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id": "chatcmpl-mf", "object": "chat.completion", "created": 1677652288, "model": "gpt-4",
+			"choices": []map[string]interface{}{
+				{"index": 0, "message": map[string]interface{}{"role": "assistant", "content": "OK"}, "finish_reason": "stop"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL, "gpt-4", "chat")
+	// Malformed tool def (no "function" key)
+	toolDefs := []map[string]interface{}{
+		{"type": "function", "not_function": "oops"},
+	}
+	resp, err := client.Chat(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, toolDefs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "OK" {
+		t.Errorf("expected 'OK', got '%s'", resp.Content)
+	}
+}
+
+func TestResponsesAPIMalformedToolDef(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id": "resp-mf", "object": "response",
+			"output": []map[string]interface{}{
+				{"type": "message", "role": "assistant", "content": []map[string]interface{}{
+					{"type": "output_text", "text": "OK"},
+				}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+	toolDefs := []map[string]interface{}{
+		{"type": "function", "bad": "no function key"},
+	}
+	resp, err := client.Chat(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, toolDefs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "OK" {
+		t.Errorf("expected 'OK', got '%s'", resp.Content)
+	}
+}
+
+func TestResponsesAPIWithAllMessageTypes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"id": "resp-all", "object": "response",
+			"output": []map[string]interface{}{
+				{"type": "message", "role": "assistant", "content": []map[string]interface{}{
+					{"type": "output_text", "text": "Summary done"},
+				}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", server.URL+"/v1", "gpt-4", "responses")
+	messages := []types.Message{
+		{Role: "system", Content: "Be helpful"},
+		{Role: "user", Content: "Read file"},
+		{Role: "assistant", ToolCalls: []types.ToolCall{
+			{ID: "call_r1", Type: "function", Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: "read", Arguments: `{"path":"/tmp/x"}`}},
+		}},
+		{Role: "tool", Content: "file contents", ToolCallID: "call_r1"},
+		{Role: "assistant", Content: "I read the file"},
+		{Role: "user", Content: "Summarize"},
+	}
+
+	resp, err := client.Chat(context.Background(), messages, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Content != "Summary done" {
+		t.Errorf("expected 'Summary done', got '%s'", resp.Content)
+	}
+}

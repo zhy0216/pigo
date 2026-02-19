@@ -219,6 +219,37 @@ func TestLoadWithPlugins(t *testing.T) {
 	}
 }
 
+func TestLoadUnreadableConfigFile(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"model":"x"}`), 0000); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for unreadable config file")
+	}
+}
+
+func TestLoadWithUserHomeDir(t *testing.T) {
+	clearEnv(t)
+	// Do NOT set PIGO_HOME -- force the UserHomeDir fallback path
+	t.Setenv("OPENAI_API_KEY", "sk-test-home")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.APIKey != "sk-test-home" {
+		t.Errorf("expected 'sk-test-home', got '%s'", cfg.APIKey)
+	}
+}
+
 func TestResolve(t *testing.T) {
 	tests := []struct {
 		name   string

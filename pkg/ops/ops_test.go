@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"strings"
 	"testing"
@@ -58,6 +59,20 @@ func TestRealFileOps(t *testing.T) {
 	}
 	if string(data) != "hello" {
 		t.Errorf("expected 'hello', got '%s'", string(data))
+	}
+
+	// Test Open
+	rc, err := ops.Open(path)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	openData, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		t.Fatalf("ReadAll from Open failed: %v", err)
+	}
+	if string(openData) != "hello" {
+		t.Errorf("Open: expected 'hello', got '%s'", string(openData))
 	}
 
 	// Test ReadDir
@@ -129,6 +144,41 @@ func TestRealExecOps(t *testing.T) {
 		_, err := ops.LookPath("nonexistent_binary_xyz_123")
 		if err == nil {
 			t.Error("expected error for missing binary")
+		}
+	})
+
+	t.Run("command not found", func(t *testing.T) {
+		_, _, exitCode, err := ops.Run(context.Background(), "/nonexistent/binary/xyz", nil, nil)
+		if err == nil {
+			t.Fatal("expected error for missing binary")
+		}
+		if exitCode != -1 {
+			t.Errorf("expected exit code -1, got %d", exitCode)
+		}
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, _, exitCode, err := ops.Run(ctx, "/bin/sleep", []string{"10"}, nil)
+		if err == nil {
+			t.Fatal("expected context error")
+		}
+		if exitCode != -1 {
+			t.Errorf("expected exit code -1, got %d", exitCode)
+		}
+	})
+
+	t.Run("with custom env", func(t *testing.T) {
+		stdout, _, exitCode, err := ops.Run(context.Background(), "/bin/sh", []string{"-c", "echo $MY_TEST_VAR"}, []string{"MY_TEST_VAR=hello_test"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if exitCode != 0 {
+			t.Errorf("expected exit code 0, got %d", exitCode)
+		}
+		if strings.TrimSpace(stdout) != "hello_test" {
+			t.Errorf("expected 'hello_test', got '%s'", strings.TrimSpace(stdout))
 		}
 	})
 }

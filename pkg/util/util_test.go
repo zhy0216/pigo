@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,99 @@ func TestFormatWithLineNumbersFromReader(t *testing.T) {
 	}
 	if strings.Contains(result, "line 3") {
 		t.Errorf("should not contain line 3 due to limit, got: %s", result)
+	}
+}
+
+func TestFormatWithLineNumbersFromReaderEdgeCases(t *testing.T) {
+	t.Run("long line truncation", func(t *testing.T) {
+		// Line longer than MaxLineLength should be truncated with "..."
+		longLine := strings.Repeat("x", types.MaxLineLength+100) + "\n"
+		result, err := FormatWithLineNumbersFromReader(strings.NewReader(longLine), 1, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "...") {
+			t.Error("expected truncation marker '...' for long line")
+		}
+		// The formatted line (after line number) should not exceed MaxLineLength + "..."
+		lines := strings.SplitN(result, "\t", 2)
+		if len(lines) < 2 {
+			t.Fatalf("expected tab-separated output, got: %s", result)
+		}
+		content := strings.TrimRight(lines[1], "\n")
+		if len(content) > types.MaxLineLength+3 {
+			t.Errorf("truncated line too long: %d chars", len(content))
+		}
+	})
+
+	t.Run("very long line exceeds bufio buffer", func(t *testing.T) {
+		// Line longer than bufio default buffer (4096) triggers ErrBufferFull
+		longLine := strings.Repeat("A", 5000) + "\n"
+		result, err := FormatWithLineNumbersFromReader(strings.NewReader(longLine), 1, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "...") {
+			t.Error("expected truncation marker for very long line")
+		}
+	})
+
+	t.Run("CRLF line endings", func(t *testing.T) {
+		content := "line1\r\nline2\r\nline3\r\n"
+		result, err := FormatWithLineNumbersFromReader(strings.NewReader(content), 1, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(result, "\r") {
+			t.Error("expected \\r to be stripped from CRLF lines")
+		}
+		if !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
+			t.Errorf("expected all lines, got: %s", result)
+		}
+	})
+
+	t.Run("EOF without trailing newline", func(t *testing.T) {
+		content := "line1\nline2"
+		result, err := FormatWithLineNumbersFromReader(strings.NewReader(content), 1, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "line1") || !strings.Contains(result, "line2") {
+			t.Errorf("expected both lines, got: %s", result)
+		}
+	})
+
+	t.Run("reader error mid-stream", func(t *testing.T) {
+		r := &failingReader{failAfter: 1}
+		_, err := FormatWithLineNumbersFromReader(r, 1, 0)
+		if err == nil {
+			t.Error("expected error from failing reader")
+		}
+	})
+}
+
+// failingReader returns data for the first read, then errors.
+type failingReader struct {
+	failAfter int
+	calls     int
+}
+
+func (f *failingReader) Read(p []byte) (int, error) {
+	f.calls++
+	if f.calls > f.failAfter {
+		return 0, fmt.Errorf("simulated disk error")
+	}
+	data := []byte("line1\nli")
+	n := copy(p, data)
+	return n, nil
+}
+
+func TestFormatWithLineNumbersLongLine(t *testing.T) {
+	// Test FormatWithLineNumbers (not FromReader) with long line truncation
+	longLine := strings.Repeat("z", types.MaxLineLength+50)
+	result := FormatWithLineNumbers(longLine, 1, 0)
+	if !strings.Contains(result, "...") {
+		t.Error("expected truncation marker for long line")
 	}
 }
 
