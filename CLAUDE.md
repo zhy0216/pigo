@@ -28,8 +28,9 @@ make clean        # Remove build artifacts
 Multi-package layout under `cmd/` and `pkg/`:
 
 - **Entry point**: `cmd/pigo/main.go` — CLI loop, signal handling (Ctrl-C cancels turn, double Ctrl-C exits), skill command expansion
-- **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution
-- **Agent**: `pkg/agent/` — `Agent` struct, `LoadConfig`, `HandleCommand` (all slash commands), `ProcessInput` (agent loop, max 10 iterations), proactive context compaction
+- **Agent**: `pkg/agent/` — `Agent` struct, `HandleCommand` (slash commands: `/q`, `/c`, `/usage`, `/skills`, `/plugins`, `/model`), `ProcessInput` (agent loop, max 10 iterations), proactive context compaction
+- **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution, plugin definitions
+- **Hooks**: `pkg/hooks/` — Event-driven plugin hook system for tool interception, blocking/async execution, env-var-based context passing
 - **LLM client**: `pkg/llm/` — OpenAI client supporting Chat Completions and Responses API modes, streaming
 - **Tool framework**: `pkg/tools/` — `ToolRegistry` (thread-safe) + 7 tools: read, write, edit, bash, grep, find, ls
 - **Skills**: `pkg/skills/` — Markdown skill files from `~/.pigo/skills/` (user) and `./.pigo/skills/` (project), YAML frontmatter
@@ -64,6 +65,7 @@ All variables below can also be set in `~/.pigo/config.json` (config file takes 
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
 | `OPENAI_API_TYPE` | No | `chat` | `chat` or `responses` |
 | `PIGO_MEMPROFILE` | No | — | Write heap profile to this path on exit |
+| `PIGO_HOME` | No | `~/.pigo` | Override base directory for config and data |
 
 ## Code Style
 

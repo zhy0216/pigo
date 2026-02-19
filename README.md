@@ -9,6 +9,7 @@ Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rg
 - **7 tools**: read, write, edit, bash, grep, find, ls
 - **OpenAI-compatible API**: Works with OpenAI, OpenRouter, vLLM, or any compatible endpoint
 - **Interactive CLI**: Conversation history, streaming output
+- **Plugin hooks**: Event-driven hooks for tool interception, logging, and custom workflows
 - **Skills system**: User and project-level skill definitions via Markdown files
 - **Context compaction**: Proactive context management with LLM-generated summaries
 
@@ -68,6 +69,7 @@ and runs an interactive CLI loop...
 | `/model [name]` | Show or change the current model |
 | `/usage` | Show token usage statistics |
 | `/skills` | List available skills |
+| `/plugins` | List active plugins |
 | `/skill:<name>` | Invoke a skill by name |
 
 ## Configuration File
@@ -79,7 +81,17 @@ pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields 
   "api_key": "your-api-key",
   "base_url": "https://openrouter.ai/api/v1",
   "model": "anthropic/claude-3.5-sonnet",
-  "api_type": "chat"
+  "api_type": "chat",
+  "plugins": [
+    {
+      "name": "my-logger",
+      "hooks": {
+        "tool_start": [
+          { "command": "echo \"Running $PIGO_TOOL_NAME\"" }
+        ]
+      }
+    }
+  ]
 }
 ```
 
@@ -103,6 +115,7 @@ These can also be set via the config file (see above).
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
 | `OPENAI_API_TYPE` | No | `chat` | API mode: `chat` (Chat Completions) or `responses` (Responses API) |
 | `PIGO_MEMPROFILE` | No | - | File path to write heap profile on exit |
+| `PIGO_HOME` | No | `~/.pigo` | Override base directory for config and data |
 
 ## Tools
 
@@ -189,6 +202,32 @@ List directory contents with type indicators.
 }
 ```
 
+## Plugins
+
+Plugins define hooks that run shell commands in response to agent lifecycle events. Configure them in the config file under the `plugins` key.
+
+### Events
+
+| Event | Description |
+|-------|-------------|
+| `agent_start` | Agent begins processing user input |
+| `agent_end` | Agent finishes processing |
+| `turn_start` | Start of each agent loop iteration |
+| `turn_end` | End of each iteration |
+| `tool_start` | Before tool execution (blocking hooks can cancel the tool) |
+| `tool_end` | After tool execution |
+
+### Hook Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | string | (required) | Shell command to execute |
+| `match.tool` | string | (all tools) | Pipe-separated tool filter (e.g., `"bash\|write"`) |
+| `blocking` | bool | `true` | Wait for completion; async if false |
+| `timeout` | int | `10` | Timeout in seconds (blocking only) |
+
+Hooks receive context via environment variables: `PIGO_EVENT`, `PIGO_TOOL_NAME`, `PIGO_TOOL_OUTPUT`, etc.
+
 ## Architecture
 
 ```
@@ -197,8 +236,12 @@ pigo/
 │   └── main.go              # CLI entry point, signal handling
 ├── pkg/
 │   ├── agent/
-│   │   ├── agent.go          # Agent struct, config, ProcessInput loop
+│   │   ├── agent.go          # Agent struct, ProcessInput loop, hook integration
 │   │   └── compaction.go     # Proactive context compaction
+│   ├── config/
+│   │   └── config.go         # JSON config file + env var merging
+│   ├── hooks/
+│   │   └── hooks.go          # Plugin hook manager, blocking/async execution
 │   ├── llm/
 │   │   └── client.go         # OpenAI client (chat + responses API, streaming)
 │   ├── ops/
