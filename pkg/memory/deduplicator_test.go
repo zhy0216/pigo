@@ -75,7 +75,7 @@ func newDedupTest(t *testing.T, chatResp func(w http.ResponseWriter, r *http.Req
 		}
 	}))
 
-	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat")
+	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat", "")
 	store := NewMemoryStore()
 
 	dedup := &MemoryDeduplicator{

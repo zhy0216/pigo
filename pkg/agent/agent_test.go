@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/user/pigo/pkg/config"
 	"github.com/user/pigo/pkg/skills"
 	"github.com/user/pigo/pkg/types"
 )
@@ -153,51 +154,8 @@ func mockRespond(w http.ResponseWriter, r *http.Request, response map[string]int
 	}
 }
 
-func TestLoadConfig(t *testing.T) {
-	t.Run("missing API key", func(t *testing.T) {
-		t.Setenv("OPENAI_API_KEY", "")
-		_, err := LoadConfig()
-		if err == nil {
-			t.Error("expected error for missing API key")
-		}
-	})
-
-	t.Run("valid config", func(t *testing.T) {
-		t.Setenv("OPENAI_API_KEY", "test-key")
-		t.Setenv("OPENAI_BASE_URL", "https://api.example.com")
-		t.Setenv("PIGO_MODEL", "gpt-4")
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.APIKey != "test-key" {
-			t.Errorf("expected 'test-key', got '%s'", cfg.APIKey)
-		}
-		if cfg.BaseURL != "https://api.example.com" {
-			t.Errorf("expected base URL, got '%s'", cfg.BaseURL)
-		}
-		if cfg.Model != "gpt-4" {
-			t.Errorf("expected 'gpt-4', got '%s'", cfg.Model)
-		}
-	})
-
-	t.Run("default model", func(t *testing.T) {
-		t.Setenv("OPENAI_API_KEY", "test-key")
-		t.Setenv("PIGO_MODEL", "")
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.Model != "gpt-4o" {
-			t.Errorf("expected default 'gpt-4o', got '%s'", cfg.Model)
-		}
-	})
-}
-
 func TestNewAgent(t *testing.T) {
-	cfg := &Config{
+	cfg := &config.Config{
 		APIKey: "test-key",
 		Model:  "gpt-4",
 	}
@@ -220,7 +178,7 @@ func TestNewAgent(t *testing.T) {
 }
 
 func TestAgentHandleCommand(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -320,7 +278,7 @@ func TestAgentProcessInput(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{
+	cfg := &config.Config{
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "gpt-4",
@@ -407,7 +365,7 @@ func TestAgentProcessInputWithToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output
@@ -495,7 +453,7 @@ func TestSequentialToolExecution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 	agent.registry.Register(toolA)
@@ -526,7 +484,7 @@ func TestSequentialToolExecution(t *testing.T) {
 }
 
 func TestTruncateMessages(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output
@@ -608,7 +566,7 @@ func TestProcessInputContextOverflowRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output
@@ -652,7 +610,7 @@ func TestProcessInputContextOverflowMaxRetries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -690,7 +648,7 @@ func TestUsageTracking(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -704,7 +662,7 @@ func TestUsageTracking(t *testing.T) {
 }
 
 func TestUsageCommand(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -727,7 +685,7 @@ func TestUsageCommand(t *testing.T) {
 }
 
 func TestQuitShowsUsage(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -747,7 +705,7 @@ func TestQuitShowsUsage(t *testing.T) {
 }
 
 func TestModelCommand(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -774,7 +732,7 @@ func TestModelCommand(t *testing.T) {
 }
 
 func TestHandleCommandSessions(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -786,7 +744,7 @@ func TestHandleCommandSessions(t *testing.T) {
 }
 
 func TestHandleCommandSaveLoad(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -830,7 +788,7 @@ func TestHandleCommandSaveLoad(t *testing.T) {
 }
 
 func TestHandleCommandMemory(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	buf := &bytes.Buffer{}
 	agent.output = buf
@@ -854,7 +812,7 @@ func TestHandleCommandMemory(t *testing.T) {
 }
 
 func TestHandleCommandEvents(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	e := agent.Events()
 	if e == nil {

@@ -108,7 +108,7 @@ func newExtractorTest(t *testing.T, chatResp func(w http.ResponseWriter, r *http
 		}
 	}))
 
-	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat")
+	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat", "")
 	store := NewMemoryStore()
 	output := &bytes.Buffer{}
 

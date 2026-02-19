@@ -46,7 +46,7 @@ func newMemToolTest(t *testing.T, chatResp func(w http.ResponseWriter, r *http.R
 		}
 	}))
 
-	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat")
+	client := llm.NewClient("test-key", server.URL, "gpt-4", "chat", "")
 	store := NewMemoryStore()
 	dedup := &MemoryDeduplicator{Client: client, Store: store}
 	extractor := &MemoryExtractor{Client: client, Store: store, Deduplicator: dedup}

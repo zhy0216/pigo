@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/user/pigo/pkg/config"
 	"github.com/user/pigo/pkg/types"
 	"github.com/user/pigo/pkg/util"
 )
@@ -83,7 +84,7 @@ func TestExtractFileOpsEmpty(t *testing.T) {
 }
 
 func TestFindCutPoint(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -108,7 +109,7 @@ func TestFindCutPoint(t *testing.T) {
 }
 
 func TestFindCutPointAllToolMessages(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -137,7 +138,7 @@ func TestFindCutPointAllToolMessages(t *testing.T) {
 }
 
 func TestFindCutPointPreservesToolSequences(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
 
@@ -192,7 +193,7 @@ func TestCompactMessagesWithSummarization(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &Config{
+	cfg := &config.Config{
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "gpt-4",
@@ -236,7 +237,7 @@ func TestCompactMessagesWithSummarization(t *testing.T) {
 }
 
 func TestCompactMessagesNoop(t *testing.T) {
-	cfg := &Config{APIKey: "test", Model: "gpt-4"}
+	cfg := &config.Config{APIKey: "test", Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output

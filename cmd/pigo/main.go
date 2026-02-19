@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/user/pigo/pkg/agent"
+	"github.com/user/pigo/pkg/config"
 	"github.com/user/pigo/pkg/skills"
 	"github.com/user/pigo/pkg/types"
 )
@@ -37,7 +38,7 @@ func main() {
 		}()
 	}
 
-	cfg, err := agent.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
