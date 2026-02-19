@@ -235,3 +235,76 @@ func TestRun_timeout(t *testing.T) {
 		t.Errorf("timeout took too long: %v", elapsed)
 	}
 }
+
+func TestRun_multiplePlugins_ordering(t *testing.T) {
+	blocking := true
+	outFile := filepath.Join(t.TempDir(), "order.txt")
+
+	plugins := []PluginConfig{
+		{
+			Name: "first",
+			Hooks: map[string][]HookConfig{
+				"agent_start": {{
+					Command:  fmt.Sprintf("echo first >> %s", outFile),
+					Blocking: &blocking,
+				}},
+			},
+		},
+		{
+			Name: "second",
+			Hooks: map[string][]HookConfig{
+				"agent_start": {{
+					Command:  fmt.Sprintf("echo second >> %s", outFile),
+					Blocking: &blocking,
+				}},
+			},
+		},
+	}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+	lines := strings.TrimSpace(string(data))
+	if lines != "first\nsecond" {
+		t.Errorf("execution order = %q, want %q", lines, "first\nsecond")
+	}
+}
+
+func TestRun_nonBlocking(t *testing.T) {
+	nonBlocking := false
+	outFile := filepath.Join(t.TempDir(), "async.txt")
+
+	plugins := []PluginConfig{{
+		Name: "async",
+		Hooks: map[string][]HookConfig{
+			"agent_end": {{
+				Command:  fmt.Sprintf("echo done > %s", outFile),
+				Blocking: &nonBlocking,
+			}},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_end", WorkDir: os.TempDir(), Model: "test"}
+
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Give the async command a moment to finish
+	time.Sleep(500 * time.Millisecond)
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("async hook didn't write output: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "done" {
+		t.Errorf("async output = %q, want %q", string(data), "done")
+	}
+}
