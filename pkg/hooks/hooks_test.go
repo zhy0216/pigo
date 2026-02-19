@@ -136,7 +136,7 @@ func TestBuildEnv_turnNumber(t *testing.T) {
 func TestRun_blockingSuccess(t *testing.T) {
 	blocking := true
 	plugins := []PluginConfig{{
-		Name: "test",
+		Name:  "test",
 		Hooks: map[string][]HookConfig{"agent_start": {{Command: "true", Blocking: &blocking}}},
 	}}
 	mgr := NewHookManager(plugins)
@@ -149,7 +149,7 @@ func TestRun_blockingSuccess(t *testing.T) {
 func TestRun_blockingFailure_toolStart_cancels(t *testing.T) {
 	blocking := true
 	plugins := []PluginConfig{{
-		Name: "gate",
+		Name:  "gate",
 		Hooks: map[string][]HookConfig{"tool_start": {{Command: "echo 'blocked' >&2; exit 1", Blocking: &blocking}}},
 	}}
 	mgr := NewHookManager(plugins)
@@ -162,7 +162,7 @@ func TestRun_blockingFailure_toolStart_cancels(t *testing.T) {
 func TestRun_blockingFailure_nonToolStart_continues(t *testing.T) {
 	blocking := true
 	plugins := []PluginConfig{{
-		Name: "warn",
+		Name:  "warn",
 		Hooks: map[string][]HookConfig{"agent_end": {{Command: "exit 1", Blocking: &blocking}}},
 	}}
 	mgr := NewHookManager(plugins)
@@ -175,7 +175,7 @@ func TestRun_blockingFailure_nonToolStart_continues(t *testing.T) {
 func TestRun_matchFiltering(t *testing.T) {
 	blocking := true
 	plugins := []PluginConfig{{
-		Name: "filter",
+		Name:  "filter",
 		Hooks: map[string][]HookConfig{"tool_start": {{Command: "exit 1", Match: &MatchRule{Tool: "write"}, Blocking: &blocking}}},
 	}}
 	mgr := NewHookManager(plugins)
@@ -199,7 +199,7 @@ func TestRun_envVarsAvailable(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "env-out.txt")
 	cmd := fmt.Sprintf("echo $PIGO_TOOL_NAME > %s", tmpFile)
 	plugins := []PluginConfig{{
-		Name: "env-check",
+		Name:  "env-check",
 		Hooks: map[string][]HookConfig{"tool_start": {{Command: cmd, Blocking: &blocking}}},
 	}}
 	mgr := NewHookManager(plugins)
@@ -220,7 +220,7 @@ func TestRun_envVarsAvailable(t *testing.T) {
 func TestRun_timeout(t *testing.T) {
 	blocking := true
 	plugins := []PluginConfig{{
-		Name: "slow",
+		Name:  "slow",
 		Hooks: map[string][]HookConfig{"tool_start": {{Command: "sleep 30", Blocking: &blocking, Timeout: 1}}},
 	}}
 	mgr := NewHookManager(plugins)

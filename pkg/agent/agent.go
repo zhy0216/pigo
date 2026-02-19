@@ -343,7 +343,11 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				toolEndCtx := a.newHookContext("tool_end")
 				toolEndCtx.ToolName = tc.Function.Name
 				toolEndCtx.ToolArgs = tc.Function.Arguments
-				toolEndCtx.ToolOutput = result.ForLLM
+				toolOutput := result.ForLLM
+				if len(toolOutput) > 10000 {
+					toolOutput = toolOutput[len(toolOutput)-10000:]
+				}
+				toolEndCtx.ToolOutput = toolOutput
 				toolEndCtx.ToolError = result.IsError
 				a.hookMgr.Run(ctx, toolEndCtx)
 			}
