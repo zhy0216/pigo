@@ -1,6 +1,9 @@
 package hooks
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // PluginConfig defines a plugin with its hooks.
 type PluginConfig struct {
@@ -65,4 +68,30 @@ func matchesRule(rule *MatchRule, toolName string) bool {
 		}
 	}
 	return false
+}
+
+// buildEnv creates environment variables for a hook subprocess.
+func buildEnv(hctx *HookContext) []string {
+	env := []string{
+		"PIGO_EVENT=" + hctx.Event,
+		"PIGO_WORK_DIR=" + hctx.WorkDir,
+		"PIGO_MODEL=" + hctx.Model,
+		"PIGO_USER_MESSAGE=" + hctx.UserMessage,
+		"PIGO_ASSISTANT_MESSAGE=" + hctx.AssistantMessage,
+	}
+	if hctx.ToolName != "" {
+		env = append(env, "PIGO_TOOL_NAME="+hctx.ToolName)
+		env = append(env, "PIGO_TOOL_ARGS="+hctx.ToolArgs)
+	}
+	if hctx.Event == "tool_start" && hctx.ToolInput != "" {
+		env = append(env, "PIGO_TOOL_INPUT="+hctx.ToolInput)
+	}
+	if hctx.Event == "tool_end" {
+		env = append(env, "PIGO_TOOL_OUTPUT="+hctx.ToolOutput)
+		env = append(env, fmt.Sprintf("PIGO_TOOL_ERROR=%v", hctx.ToolError))
+	}
+	if hctx.Event == "turn_start" || hctx.Event == "turn_end" {
+		env = append(env, fmt.Sprintf("PIGO_TURN_NUMBER=%d", hctx.TurnNumber))
+	}
+	return env
 }
