@@ -1,6 +1,10 @@
 package hooks
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -125,5 +129,89 @@ func TestBuildEnv_turnNumber(t *testing.T) {
 	m := envToMap(env)
 	if m["PIGO_TURN_NUMBER"] != "3" {
 		t.Errorf("PIGO_TURN_NUMBER = %q", m["PIGO_TURN_NUMBER"])
+	}
+}
+
+func TestRun_blockingSuccess(t *testing.T) {
+	blocking := true
+	plugins := []PluginConfig{{
+		Name: "test",
+		Hooks: map[string][]HookConfig{"agent_start": {{Command: "true", Blocking: &blocking}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_blockingFailure_toolStart_cancels(t *testing.T) {
+	blocking := true
+	plugins := []PluginConfig{{
+		Name: "gate",
+		Hooks: map[string][]HookConfig{"tool_start": {{Command: "echo 'blocked' >&2; exit 1", Blocking: &blocking}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
+	if err := mgr.Run(context.Background(), hctx); err == nil {
+		t.Fatal("expected error for blocked tool_start, got nil")
+	}
+}
+
+func TestRun_blockingFailure_nonToolStart_continues(t *testing.T) {
+	blocking := true
+	plugins := []PluginConfig{{
+		Name: "warn",
+		Hooks: map[string][]HookConfig{"agent_end": {{Command: "exit 1", Blocking: &blocking}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_end", WorkDir: os.TempDir(), Model: "test"}
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Errorf("non-tool_start failure should not return error, got: %v", err)
+	}
+}
+
+func TestRun_matchFiltering(t *testing.T) {
+	blocking := true
+	plugins := []PluginConfig{{
+		Name: "filter",
+		Hooks: map[string][]HookConfig{"tool_start": {{Command: "exit 1", Match: &MatchRule{Tool: "write"}, Blocking: &blocking}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Errorf("hook should be skipped for non-matching tool, got: %v", err)
+	}
+}
+
+func TestRun_noHooksForEvent(t *testing.T) {
+	plugins := []PluginConfig{{Name: "empty", Hooks: map[string][]HookConfig{}}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_envVarsAvailable(t *testing.T) {
+	blocking := true
+	tmpFile := filepath.Join(t.TempDir(), "env-out.txt")
+	cmd := fmt.Sprintf("echo $PIGO_TOOL_NAME > %s", tmpFile)
+	plugins := []PluginConfig{{
+		Name: "env-check",
+		Hooks: map[string][]HookConfig{"tool_start": {{Command: cmd, Blocking: &blocking}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "read", ToolArgs: `{"path":"/tmp/foo"}`}
+	if err := mgr.Run(context.Background(), hctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("failed to read temp file: %v", err)
+	}
+	got := strings.TrimSpace(string(data))
+	if got != "read" {
+		t.Errorf("PIGO_TOOL_NAME = %q, want %q", got, "read")
 	}
 }
