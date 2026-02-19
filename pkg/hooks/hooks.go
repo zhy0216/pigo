@@ -153,6 +153,11 @@ func runBlocking(ctx context.Context, command string, env []string, dir string, 
 	return nil
 }
 
+// GetPlugins returns the list of active plugins.
+func (m *HookManager) GetPlugins() []PluginConfig {
+	return m.plugins
+}
+
 func runAsync(command string, env []string, dir string) {
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Env = env

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/user/pigo/pkg/config"
+	"github.com/user/pigo/pkg/hooks"
 	"github.com/user/pigo/pkg/llm"
 	"github.com/user/pigo/pkg/ops"
 	"github.com/user/pigo/pkg/skills"
@@ -26,6 +27,7 @@ type Agent struct {
 	output   io.Writer
 	Skills   []skills.Skill
 	events   *types.EventEmitter
+	hookMgr  *hooks.HookManager
 	usage    types.TokenUsage // accumulated session usage
 }
 
@@ -79,6 +81,7 @@ When helping with coding tasks:
 	}
 
 	events := types.NewEventEmitter()
+	hookMgr := hooks.NewHookManager(cfg.Plugins)
 
 	agent := &Agent{
 		client:   client,
@@ -87,6 +90,7 @@ When helping with coding tasks:
 		output:   os.Stdout,
 		Skills:   loadedSkills,
 		events:   events,
+		hookMgr:  hookMgr,
 	}
 
 	events.Subscribe(agent.defaultOutputHandler)
@@ -125,6 +129,21 @@ func (a *Agent) HandleCommand(input string) (handled bool, exit bool) {
 			fmt.Fprintln(a.output, "Loaded skills:")
 			for _, s := range a.Skills {
 				fmt.Fprintf(a.output, "  /skill:%s - %s [%s] (%s)\n", s.Name, s.Description, s.Source, s.FilePath)
+			}
+		}
+		return true, false
+	case "/plugins":
+		plugins := a.hookMgr.GetPlugins()
+		if len(plugins) == 0 {
+			fmt.Fprintln(a.output, "No plugins loaded.")
+		} else {
+			fmt.Fprintln(a.output, "Loaded plugins:")
+			for _, p := range plugins {
+				hookCount := 0
+				for _, hs := range p.Hooks {
+					hookCount += len(hs)
+				}
+				fmt.Fprintf(a.output, "  %s (%d hooks)\n", p.Name, hookCount)
 			}
 		}
 		return true, false
@@ -192,12 +211,16 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	}
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentStart})
+	a.hookMgr.Run(ctx, a.newHookContext("agent_start"))
 
 	maxIterations := types.MaxAgentIterations
 	completed := false
 	var agentErr error
 	for iterations := 0; iterations < maxIterations; iterations++ {
 		a.events.Emit(types.AgentEvent{Type: types.EventTurnStart})
+		hctxTurn := a.newHookContext("turn_start")
+		hctxTurn.TurnNumber = iterations + 1
+		a.hookMgr.Run(ctx, hctxTurn)
 
 		var response *types.ChatResponse
 		var chatErr error
@@ -224,6 +247,9 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		if chatErr != nil {
 			agentErr = fmt.Errorf("chat error: %w", chatErr)
 			a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd, Error: agentErr})
+			hctxTurnEnd := a.newHookContext("turn_end")
+			hctxTurnEnd.TurnNumber = iterations + 1
+			a.hookMgr.Run(ctx, hctxTurnEnd)
 			break
 		}
 
@@ -253,6 +279,26 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				}
 
 				a.events.Emit(types.AgentEvent{Type: types.EventToolStart, ToolName: tc.Function.Name})
+
+				// Run tool_start hooks — blocking hook failure cancels the tool
+				toolStartCtx := a.newHookContext("tool_start")
+				toolStartCtx.ToolName = tc.Function.Name
+				toolStartCtx.ToolArgs = tc.Function.Arguments
+				if input, ok := extractToolInput(tc.Function.Name, tc.Function.Arguments); ok {
+					toolStartCtx.ToolInput = input
+				}
+				if hookErr := a.hookMgr.Run(ctx, toolStartCtx); hookErr != nil {
+					result := types.ErrorResult(fmt.Sprintf("blocked by hook: %v", hookErr))
+					blockedMsg := types.Message{
+						Role:       "tool",
+						Content:    result.ForLLM,
+						ToolCallID: tc.ID,
+					}
+					a.messages = append(a.messages, blockedMsg)
+					turnMessages = append(turnMessages, blockedMsg)
+					a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name})
+					continue
+				}
 
 				var args map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
@@ -293,9 +339,19 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				a.messages = append(a.messages, toolMsg)
 				turnMessages = append(turnMessages, toolMsg)
 				a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name, Content: output})
+
+				toolEndCtx := a.newHookContext("tool_end")
+				toolEndCtx.ToolName = tc.Function.Name
+				toolEndCtx.ToolArgs = tc.Function.Arguments
+				toolEndCtx.ToolOutput = result.ForLLM
+				toolEndCtx.ToolError = result.IsError
+				a.hookMgr.Run(ctx, toolEndCtx)
 			}
 
 			a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
+			hctxTurnEnd := a.newHookContext("turn_end")
+			hctxTurnEnd.TurnNumber = iterations + 1
+			a.hookMgr.Run(ctx, hctxTurnEnd)
 			continue
 		}
 
@@ -307,6 +363,9 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		turnMessages = append(turnMessages, assistantMsg)
 		a.events.Emit(types.AgentEvent{Type: types.EventMessageEnd, Content: response.Content})
 		a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
+		hctxTurnEnd := a.newHookContext("turn_end")
+		hctxTurnEnd.TurnNumber = iterations + 1
+		a.hookMgr.Run(ctx, hctxTurnEnd)
 		completed = true
 		break
 	}
@@ -316,6 +375,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	}
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentEnd, Error: agentErr})
+	a.hookMgr.Run(ctx, a.newHookContext("agent_end"))
 	return agentErr
 }
 
@@ -363,4 +423,39 @@ func (a *Agent) Events() *types.EventEmitter {
 // GetModel returns the model name.
 func (a *Agent) GetModel() string {
 	return a.client.GetModel()
+}
+
+// lastMessage returns the last message with the given role, or empty string.
+func (a *Agent) lastMessage(role string) string {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == role {
+			return a.messages[i].Content
+		}
+	}
+	return ""
+}
+
+// newHookContext creates a base HookContext with common fields.
+func (a *Agent) newHookContext(event string) *hooks.HookContext {
+	wd, _ := os.Getwd()
+	return &hooks.HookContext{
+		Event:            event,
+		WorkDir:          wd,
+		Model:            a.client.GetModel(),
+		UserMessage:      a.lastMessage("user"),
+		AssistantMessage: a.lastMessage("assistant"),
+	}
+}
+
+// extractToolInput extracts a human-readable input string for common tools.
+func extractToolInput(toolName, argsJSON string) (string, bool) {
+	if toolName == "bash" {
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(argsJSON), &args); err == nil {
+			if cmd, ok := args["command"].(string); ok {
+				return cmd, true
+			}
+		}
+	}
+	return "", false
 }
