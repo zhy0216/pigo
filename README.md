@@ -76,7 +76,33 @@ and runs an interactive CLI loop...
 | `/memory clear` | Clear all stored memories |
 | `/skill:<name>` | Invoke a skill by name |
 
+## Configuration File
+
+pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields are optional.
+
+```json
+{
+  "api_key": "your-api-key",
+  "base_url": "https://openrouter.ai/api/v1",
+  "model": "anthropic/claude-3.5-sonnet",
+  "api_type": "chat",
+  "embed_model": "text-embedding-3-small"
+}
+```
+
+**Priority order**: config file > environment variables > defaults.
+
+| Config field | Environment variable | Default |
+|-------------|---------------------|---------|
+| `api_key` | `OPENAI_API_KEY` | (required) |
+| `base_url` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| `model` | `PIGO_MODEL` | `gpt-4o` |
+| `api_type` | `OPENAI_API_TYPE` | `chat` |
+| `embed_model` | `PIGO_EMBED_MODEL` | `text-embedding-3-small` |
+
 ## Environment Variables
+
+These can also be set via the config file (see above).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

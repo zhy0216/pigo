@@ -28,6 +28,7 @@ make clean        # Remove build artifacts
 Multi-package layout under `cmd/` and `pkg/`:
 
 - **Entry point**: `cmd/pigo/main.go` — CLI loop, signal handling (Ctrl-C cancels turn, double Ctrl-C exits), skill command expansion
+- **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution
 - **Agent**: `pkg/agent/` — `Agent` struct, `LoadConfig`, `HandleCommand` (all slash commands), `ProcessInput` (agent loop, max 10 iterations), proactive context compaction
 - **LLM client**: `pkg/llm/` — OpenAI client supporting Chat Completions and Responses API modes, streaming, embeddings
 - **Tool framework**: `pkg/tools/` — `ToolRegistry` (thread-safe) + 7 tools: read, write, edit, bash, grep, find, ls
@@ -59,6 +60,8 @@ Proactive compaction triggers at 80% of `MaxContextChars` (200K chars). It keeps
 Memories are stored in `~/.pigo/memory/memories.jsonl` with three detail layers (L0 abstract, L1 overview, L2 content) and embedding vectors. Six categories: profile, preferences, entities, events, cases, patterns. Deduplication uses vector similarity (threshold 0.7) + LLM decision (CREATE/MERGE/SKIP).
 
 ## Environment Variables
+
+All variables below can also be set in `~/.pigo/config.json` (config file takes priority over env vars).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
