@@ -30,10 +30,8 @@ Multi-package layout under `cmd/` and `pkg/`:
 - **Entry point**: `cmd/pigo/main.go` — CLI loop, signal handling (Ctrl-C cancels turn, double Ctrl-C exits), skill command expansion
 - **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution
 - **Agent**: `pkg/agent/` — `Agent` struct, `LoadConfig`, `HandleCommand` (all slash commands), `ProcessInput` (agent loop, max 10 iterations), proactive context compaction
-- **LLM client**: `pkg/llm/` — OpenAI client supporting Chat Completions and Responses API modes, streaming, embeddings
+- **LLM client**: `pkg/llm/` — OpenAI client supporting Chat Completions and Responses API modes, streaming
 - **Tool framework**: `pkg/tools/` — `ToolRegistry` (thread-safe) + 7 tools: read, write, edit, bash, grep, find, ls
-- **Memory**: `pkg/memory/` — persistent JSONL store with L0/L1/L2 layers, vector similarity search, LLM-based extraction/deduplication, 3 tools: memory_recall, memory_remember, memory_forget
-- **Sessions**: `pkg/session/` — JSONL session persistence at `~/.pigo/sessions/`
 - **Skills**: `pkg/skills/` — Markdown skill files from `~/.pigo/skills/` (user) and `./.pigo/skills/` (project), YAML frontmatter
 - **Types**: `pkg/types/` — shared types (`Tool` interface, `ToolResult`, `Message`, `EventEmitter`), constants, ANSI colors
 - **Ops**: `pkg/ops/` — `FileOps`/`ExecOps` interfaces for testability
@@ -53,11 +51,7 @@ type Tool interface {
 
 ### Context Compaction
 
-Proactive compaction triggers at 80% of `MaxContextChars` (200K chars). It keeps recent messages (~80K chars, minimum 10 messages), generates an LLM summary of discarded messages, and extracts memories from discarded content. Falls back to naive truncation if the LLM call fails.
-
-### Memory System
-
-Memories are stored in `~/.pigo/memory/memories.jsonl` with three detail layers (L0 abstract, L1 overview, L2 content) and embedding vectors. Six categories: profile, preferences, entities, events, cases, patterns. Deduplication uses vector similarity (threshold 0.7) + LLM decision (CREATE/MERGE/SKIP).
+Proactive compaction triggers at 80% of `MaxContextChars` (200K chars). It keeps recent messages (~80K chars, minimum 10 messages), generates an LLM summary of discarded messages. Falls back to naive truncation if the LLM call fails.
 
 ## Environment Variables
 
@@ -69,7 +63,6 @@ All variables below can also be set in `~/.pigo/config.json` (config file takes 
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | API endpoint |
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
 | `OPENAI_API_TYPE` | No | `chat` | `chat` or `responses` |
-| `PIGO_EMBED_MODEL` | No | `text-embedding-3-small` | Embedding model for memory search |
 | `PIGO_MEMPROFILE` | No | — | Write heap profile to this path on exit |
 
 ## Code Style

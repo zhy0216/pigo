@@ -11,9 +11,7 @@ import (
 
 	"github.com/user/pigo/pkg/config"
 	"github.com/user/pigo/pkg/llm"
-	"github.com/user/pigo/pkg/memory"
 	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/session"
 	"github.com/user/pigo/pkg/skills"
 	"github.com/user/pigo/pkg/tools"
 	"github.com/user/pigo/pkg/types"
@@ -22,23 +20,18 @@ import (
 
 // Agent represents the pigo application.
 type Agent struct {
-	client       *llm.Client
-	registry     *tools.ToolRegistry
-	messages     []types.Message
-	output       io.Writer
-	Skills       []skills.Skill
-	events       *types.EventEmitter
-	usage        types.TokenUsage // accumulated session usage
-	Memory       *memory.MemoryStore
-	extractor    *memory.MemoryExtractor
-	deduplicator *memory.MemoryDeduplicator
+	client   *llm.Client
+	registry *tools.ToolRegistry
+	messages []types.Message
+	output   io.Writer
+	Skills   []skills.Skill
+	events   *types.EventEmitter
+	usage    types.TokenUsage // accumulated session usage
 }
-
-const memoryContextPrefix = "## Retrieved Memories (auto)\n"
 
 // NewAgent creates a new Agent instance.
 func NewAgent(cfg *config.Config) *Agent {
-	client := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType, cfg.EmbedModel)
+	client := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
 	registry := tools.NewToolRegistry()
 
 	cwd, err := os.Getwd()
@@ -68,11 +61,6 @@ func NewAgent(cfg *config.Config) *Agent {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
 	}
 
-	memStore := memory.NewMemoryStore()
-	if err := memStore.Load(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to load memories: %v\n", err)
-	}
-
 	systemPrompt := `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
 
 When helping with coding tasks:
@@ -83,13 +71,6 @@ When helping with coding tasks:
 
 	systemPrompt += skills.FormatSkillsForPrompt(loadedSkills)
 
-	if memStore.Count() > 0 {
-		memContext := memStore.FormatForPrompt(20)
-		if memContext != "" {
-			systemPrompt += "\n\n## Your Memories\nThe following are memories from previous sessions:\n\n" + memContext
-		}
-	}
-
 	messages := []types.Message{
 		{
 			Role:    "system",
@@ -99,40 +80,14 @@ When helping with coding tasks:
 
 	events := types.NewEventEmitter()
 
-	dedup := &memory.MemoryDeduplicator{
-		Client: client,
-		Store:  memStore,
-	}
-
-	extractor := &memory.MemoryExtractor{
-		Client:       client,
-		Store:        memStore,
-		Deduplicator: dedup,
-		Output:       os.Stdout,
-	}
-
 	agent := &Agent{
-		client:       client,
-		registry:     registry,
-		messages:     messages,
-		output:       os.Stdout,
-		Skills:       loadedSkills,
-		events:       events,
-		Memory:       memStore,
-		extractor:    extractor,
-		deduplicator: dedup,
+		client:   client,
+		registry: registry,
+		messages: messages,
+		output:   os.Stdout,
+		Skills:   loadedSkills,
+		events:   events,
 	}
-
-	// Register memory tools
-	memDeps := memory.MemoryToolDeps{
-		Client:       client,
-		Store:        memStore,
-		Extractor:    extractor,
-		Deduplicator: dedup,
-	}
-	registry.Register(memory.NewMemoryRecallTool(memDeps))
-	registry.Register(memory.NewMemoryRememberTool(memDeps))
-	registry.Register(memory.NewMemoryForgetTool(memDeps))
 
 	events.Subscribe(agent.defaultOutputHandler)
 
@@ -163,22 +118,6 @@ func (a *Agent) HandleCommand(input string) (handled bool, exit bool) {
 				u.PromptTokens, u.CompletionTokens, u.TotalTokens)
 		}
 		return true, false
-	case "/sessions":
-		sessions, err := session.ListSessions()
-		if err != nil {
-			fmt.Fprintf(a.output, "Error listing sessions: %v\n", err)
-			return true, false
-		}
-		if len(sessions) == 0 {
-			fmt.Fprintln(a.output, "No saved sessions.")
-		} else {
-			fmt.Fprintln(a.output, "Saved sessions:")
-			for _, s := range sessions {
-				fmt.Fprintf(a.output, "  %s  (%d messages, %s)\n",
-					s.ID, s.Messages, s.ModTime.Format("2006-01-02 15:04"))
-			}
-		}
-		return true, false
 	case "/skills":
 		if len(a.Skills) == 0 {
 			fmt.Fprintln(a.output, "No skills loaded.")
@@ -189,54 +128,9 @@ func (a *Agent) HandleCommand(input string) (handled bool, exit bool) {
 			}
 		}
 		return true, false
-	case "/memory":
-		if a.Memory == nil || a.Memory.Count() == 0 {
-			fmt.Fprintln(a.output, "No memories stored.")
-		} else {
-			fmt.Fprintf(a.output, "Stored memories (%d total):\n", a.Memory.Count())
-			for _, cat := range memory.ValidCategories {
-				mems := a.Memory.List(cat)
-				if len(mems) == 0 {
-					continue
-				}
-				fmt.Fprintf(a.output, "\n  [%s] (%d)\n", cat, len(mems))
-				for _, m := range mems {
-					fmt.Fprintf(a.output, "    %s  %s\n", m.ID, m.Abstract)
-				}
-			}
-		}
-		return true, false
 	}
 
 	// Commands with arguments
-	if input == "/save" || strings.HasPrefix(input, "/save ") {
-		name := strings.TrimPrefix(input, "/save")
-		name = strings.TrimSpace(name)
-		if name == "" {
-			name = session.SessionID()
-		}
-		if err := session.SaveSession(name, a.messages); err != nil {
-			fmt.Fprintf(a.output, "Error saving session: %v\n", err)
-		} else {
-			fmt.Fprintf(a.output, "Session saved: %s\n", name)
-		}
-		return true, false
-	}
-	if strings.HasPrefix(input, "/load ") {
-		name := strings.TrimSpace(strings.TrimPrefix(input, "/load"))
-		if name == "" {
-			fmt.Fprintln(a.output, "Usage: /load <session-id>")
-			return true, false
-		}
-		loaded, err := session.LoadSession(name)
-		if err != nil {
-			fmt.Fprintf(a.output, "Error loading session: %v\n", err)
-			return true, false
-		}
-		a.messages = append(a.messages[:1], loaded...)
-		fmt.Fprintf(a.output, "Session loaded: %s (%d messages)\n", name, len(loaded))
-		return true, false
-	}
 	if input == "/model" || strings.HasPrefix(input, "/model ") {
 		newModel := strings.TrimSpace(strings.TrimPrefix(input, "/model"))
 		if newModel == "" {
@@ -244,14 +138,6 @@ func (a *Agent) HandleCommand(input string) (handled bool, exit bool) {
 		} else {
 			a.client.SetModel(newModel)
 			fmt.Fprintf(a.output, "Model changed to: %s\n", newModel)
-		}
-		return true, false
-	}
-	if input == "/memory clear" {
-		if a.Memory != nil {
-			a.Memory.Clear()
-			a.Memory.Save()
-			fmt.Fprintln(a.output, "All memories cleared.")
 		}
 		return true, false
 	}
@@ -299,11 +185,6 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	})
 
 	a.compactMessages(ctx)
-
-	memoryInjected := a.injectMemoryContext(ctx, input)
-	if memoryInjected {
-		defer a.removeMemoryContext()
-	}
 
 	turnMessages := []types.Message{}
 	if len(a.messages) > 0 {
@@ -430,69 +311,12 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		break
 	}
 
-	if completed && a.extractor != nil && ctx.Err() == nil && len(turnMessages) > 1 {
-		a.extractor.ExtractMemories(ctx, turnMessages)
-	}
-
 	if !completed && agentErr == nil {
 		agentErr = fmt.Errorf("agent loop reached maximum iterations (%d) without completing", maxIterations)
 	}
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentEnd, Error: agentErr})
 	return agentErr
-}
-
-func (a *Agent) injectMemoryContext(ctx context.Context, query string) bool {
-	if a.Memory == nil || a.Memory.Count() == 0 {
-		return false
-	}
-
-	const maxResults = 5
-	var results []*memory.Memory
-
-	vec, err := a.client.Embed(ctx, query)
-	if err == nil && len(vec) > 0 {
-		results = a.Memory.SearchByVector(vec, maxResults, "")
-	}
-
-	if len(results) == 0 {
-		results = a.Memory.SearchByKeyword(query, maxResults)
-	}
-
-	if len(results) == 0 {
-		return false
-	}
-
-	for _, m := range results {
-		a.Memory.IncrementActive(m.ID)
-	}
-	_ = a.Memory.Save()
-
-	var buf strings.Builder
-	buf.WriteString(memoryContextPrefix)
-	buf.WriteString("Use these only if relevant to the user's current request.\n\n")
-	for _, m := range results {
-		fmt.Fprintf(&buf, "- [%s] %s\n", m.Category, m.Abstract)
-		if m.Overview != "" && m.Overview != m.Abstract {
-			fmt.Fprintf(&buf, "  %s\n", m.Overview)
-		}
-	}
-
-	a.messages = append(a.messages, types.Message{
-		Role:    "system",
-		Content: buf.String(),
-	})
-
-	return true
-}
-
-func (a *Agent) removeMemoryContext() {
-	for i := len(a.messages) - 1; i >= 0; i-- {
-		if a.messages[i].Role == "system" && strings.HasPrefix(a.messages[i].Content, memoryContextPrefix) {
-			a.messages = append(a.messages[:i], a.messages[i+1:]...)
-			return
-		}
-	}
 }
 
 // defaultOutputHandler is the default event subscriber that handles console output.

@@ -48,7 +48,7 @@ func main() {
 
 	fmt.Printf("%spigo%s - minimal AI coding assistant (model: %s, api: %s)\n", types.ColorGreen, types.ColorReset, app.GetModel(), cfg.APIType)
 	fmt.Printf("Tools: %s\n", strings.Join(app.GetRegistry().List(), ", "))
-	fmt.Printf("Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills, /memory\n")
+	fmt.Printf("Commands: /q (quit), /c (clear), /model, /usage, /skills\n")
 	if len(app.Skills) > 0 {
 		var skillNames []string
 		for _, s := range app.Skills {

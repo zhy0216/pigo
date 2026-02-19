@@ -6,10 +6,9 @@ Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rg
 
 ## Features
 
-- **10 tools**: read, write, edit, bash, grep, find, ls, memory_recall, memory_remember, memory_forget
+- **7 tools**: read, write, edit, bash, grep, find, ls
 - **OpenAI-compatible API**: Works with OpenAI, OpenRouter, vLLM, or any compatible endpoint
-- **Interactive CLI**: Conversation history, streaming output, session persistence
-- **Long-term memory**: Persistent memory with vector similarity search and automatic deduplication
+- **Interactive CLI**: Conversation history, streaming output
 - **Skills system**: User and project-level skill definitions via Markdown files
 - **Context compaction**: Proactive context management with LLM-generated summaries
 
@@ -43,8 +42,8 @@ export PIGO_MODEL="anthropic/claude-3.5-sonnet"
 
 ```
 pigo - minimal AI coding assistant (model: gpt-4o)
-Tools: read, write, edit, bash, grep, find, ls, memory_recall, memory_remember, memory_forget
-Commands: /q (quit), /c (clear), /model, /usage, /save, /load, /sessions, /skills, /memory
+Tools: read, write, edit, bash, grep, find, ls
+Commands: /q (quit), /c (clear), /model, /usage, /skills
 
 > Read main.go and explain what it does
 
@@ -68,12 +67,7 @@ and runs an interactive CLI loop...
 | `/c`, `clear` | Clear conversation history |
 | `/model [name]` | Show or change the current model |
 | `/usage` | Show token usage statistics |
-| `/save [name]` | Save the current session |
-| `/load <name>` | Load a saved session |
-| `/sessions` | List saved sessions |
 | `/skills` | List available skills |
-| `/memory` | Show memory statistics |
-| `/memory clear` | Clear all stored memories |
 | `/skill:<name>` | Invoke a skill by name |
 
 ## Configuration File
@@ -85,8 +79,7 @@ pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields 
   "api_key": "your-api-key",
   "base_url": "https://openrouter.ai/api/v1",
   "model": "anthropic/claude-3.5-sonnet",
-  "api_type": "chat",
-  "embed_model": "text-embedding-3-small"
+  "api_type": "chat"
 }
 ```
 
@@ -98,7 +91,6 @@ pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields 
 | `base_url` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
 | `model` | `PIGO_MODEL` | `gpt-4o` |
 | `api_type` | `OPENAI_API_TYPE` | `chat` |
-| `embed_model` | `PIGO_EMBED_MODEL` | `text-embedding-3-small` |
 
 ## Environment Variables
 
@@ -110,7 +102,6 @@ These can also be set via the config file (see above).
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | Custom API endpoint |
 | `PIGO_MODEL` | No | `gpt-4o` | Model name |
 | `OPENAI_API_TYPE` | No | `chat` | API mode: `chat` (Chat Completions) or `responses` (Responses API) |
-| `PIGO_EMBED_MODEL` | No | `text-embedding-3-small` | Embedding model for memory search |
 | `PIGO_MEMPROFILE` | No | - | File path to write heap profile on exit |
 
 ## Tools
@@ -198,41 +189,6 @@ List directory contents with type indicators.
 }
 ```
 
-### memory_recall
-
-Search long-term memory by vector similarity and keyword matching.
-
-```json
-{
-  "query": "user prefers tabs over spaces",
-  "category": "preferences",
-  "top_k": 5
-}
-```
-
-### memory_remember
-
-Explicitly save a memory with automatic deduplication.
-
-```json
-{
-  "category": "preferences",
-  "abstract": "User prefers tabs",
-  "overview": "User stated preference for tabs over spaces in Go code",
-  "content": "During session on 2026-01-15, user explicitly asked to use tabs..."
-}
-```
-
-### memory_forget
-
-Delete a memory by ID.
-
-```json
-{
-  "id": "mem_abc123"
-}
-```
-
 ## Architecture
 
 ```
@@ -244,16 +200,9 @@ pigo/
 │   │   ├── agent.go          # Agent struct, config, ProcessInput loop
 │   │   └── compaction.go     # Proactive context compaction
 │   ├── llm/
-│   │   └── client.go         # OpenAI client (chat + responses API, streaming, embeddings)
-│   ├── memory/
-│   │   ├── store.go          # Persistent JSONL memory store with vector search
-│   │   ├── extractor.go      # LLM-based memory extraction from compacted messages
-│   │   ├── deduplicator.go   # Vector similarity + LLM deduplication
-│   │   └── tools.go          # memory_recall, memory_remember, memory_forget tools
+│   │   └── client.go         # OpenAI client (chat + responses API, streaming)
 │   ├── ops/
 │   │   └── ops.go            # FileOps/ExecOps interfaces for testability
-│   ├── session/
-│   │   └── session.go        # JSONL session persistence (~/.pigo/sessions/)
 │   ├── skills/
 │   │   └── skills.go         # Skill loading from ~/.pigo/skills/ and ./.pigo/skills/
 │   ├── tools/

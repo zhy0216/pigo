@@ -9,20 +9,18 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
-	APIType    string // "chat" or "responses"
-	EmbedModel string
+	APIKey  string
+	BaseURL string
+	Model   string
+	APIType string // "chat" or "responses"
 }
 
 // fileConfig maps to the JSON config file structure.
 type fileConfig struct {
-	APIKey     string `json:"api_key,omitempty"`
-	BaseURL    string `json:"base_url,omitempty"`
-	Model      string `json:"model,omitempty"`
-	APIType    string `json:"api_type,omitempty"`
-	EmbedModel string `json:"embed_model,omitempty"`
+	APIKey  string `json:"api_key,omitempty"`
+	BaseURL string `json:"base_url,omitempty"`
+	Model   string `json:"model,omitempty"`
+	APIType string `json:"api_type,omitempty"`
 }
 
 // resolve returns the first non-empty value from the provided strings.
@@ -45,11 +43,10 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		APIKey:     resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY")),
-		BaseURL:    resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
-		Model:      resolve(fc.Model, os.Getenv("PIGO_MODEL"), "gpt-4o"),
-		APIType:    resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
-		EmbedModel: resolve(fc.EmbedModel, os.Getenv("PIGO_EMBED_MODEL"), "text-embedding-3-small"),
+		APIKey:  resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY")),
+		BaseURL: resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
+		Model:   resolve(fc.Model, os.Getenv("PIGO_MODEL"), "gpt-4o"),
+		APIType: resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
 	}
 
 	if cfg.APIKey == "" {

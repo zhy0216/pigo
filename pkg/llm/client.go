@@ -18,14 +18,13 @@ import (
 
 // Client wraps the OpenAI client for chat completions with tools.
 type Client struct {
-	client     openai.Client
-	model      string
-	apiType    string // "chat" or "responses"
-	embedModel string
+	client  openai.Client
+	model   string
+	apiType string // "chat" or "responses"
 }
 
 // NewClient creates a new Client with the given configuration.
-func NewClient(apiKey, baseURL, model, apiType, embedModel string) *Client {
+func NewClient(apiKey, baseURL, model, apiType string) *Client {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(3),
@@ -35,10 +34,9 @@ func NewClient(apiKey, baseURL, model, apiType, embedModel string) *Client {
 	}
 
 	return &Client{
-		client:     openai.NewClient(opts...),
-		model:      model,
-		apiType:    apiType,
-		embedModel: embedModel,
+		client:  openai.NewClient(opts...),
+		model:   model,
+		apiType: apiType,
 	}
 }
 
@@ -563,35 +561,6 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []types.Me
 	}
 
 	return response, nil
-}
-
-// Embed generates an embedding vector for the given text using the OpenAI Embeddings API.
-// Model is configured via the embedModel field (default: text-embedding-3-small).
-func (c *Client) Embed(ctx context.Context, text string) ([]float64, error) {
-	if text == "" {
-		return nil, fmt.Errorf("cannot embed empty text")
-	}
-
-	embedModel := c.embedModel
-	if embedModel == "" {
-		embedModel = string(openai.EmbeddingModelTextEmbedding3Small)
-	}
-
-	resp, err := c.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
-		Input: openai.EmbeddingNewParamsInputUnion{
-			OfString: openai.String(text),
-		},
-		Model: openai.EmbeddingModel(embedModel),
-	})
-	if err != nil {
-		return nil, wrapAPIError("embedding failed", err)
-	}
-
-	if len(resp.Data) == 0 {
-		return nil, fmt.Errorf("no embedding data in response")
-	}
-
-	return resp.Data[0].Embedding, nil
 }
 
 // GetModel returns the model name.

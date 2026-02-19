@@ -35,9 +35,6 @@ func (a *Agent) compactMessages(ctx context.Context) {
 		return
 	}
 
-	// Extract memories from discarded messages before they are lost
-	a.extractor.ExtractMemories(ctx, discarded)
-
 	fileOps := extractFileOps(discarded)
 
 	summary, err := a.summarizeMessages(ctx, discarded, fileOps)

@@ -14,7 +14,6 @@ func clearEnv(t *testing.T) {
 		"OPENAI_BASE_URL",
 		"PIGO_MODEL",
 		"OPENAI_API_TYPE",
-		"PIGO_EMBED_MODEL",
 		"PIGO_HOME",
 	} {
 		t.Setenv(key, "")
@@ -29,7 +28,6 @@ func TestLoadEnvVarsOnly(t *testing.T) {
 	t.Setenv("OPENAI_BASE_URL", "https://custom.api.com/v1")
 	t.Setenv("PIGO_MODEL", "gpt-3.5-turbo")
 	t.Setenv("OPENAI_API_TYPE", "responses")
-	t.Setenv("PIGO_EMBED_MODEL", "text-embedding-ada-002")
 
 	cfg, err := Load()
 	if err != nil {
@@ -47,9 +45,6 @@ func TestLoadEnvVarsOnly(t *testing.T) {
 	}
 	if cfg.APIType != "responses" {
 		t.Errorf("APIType = %q, want %q", cfg.APIType, "responses")
-	}
-	if cfg.EmbedModel != "text-embedding-ada-002" {
-		t.Errorf("EmbedModel = %q, want %q", cfg.EmbedModel, "text-embedding-ada-002")
 	}
 }
 
@@ -71,9 +66,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.APIType != "chat" {
 		t.Errorf("APIType = %q, want %q", cfg.APIType, "chat")
-	}
-	if cfg.EmbedModel != "text-embedding-3-small" {
-		t.Errorf("EmbedModel = %q, want %q", cfg.EmbedModel, "text-embedding-3-small")
 	}
 }
 
@@ -156,10 +148,6 @@ func TestLoadPartialOverride(t *testing.T) {
 	// api_type from file
 	if cfg.APIType != "responses" {
 		t.Errorf("APIType = %q, want %q", cfg.APIType, "responses")
-	}
-	// embed_model from default
-	if cfg.EmbedModel != "text-embedding-3-small" {
-		t.Errorf("EmbedModel = %q, want %q", cfg.EmbedModel, "text-embedding-3-small")
 	}
 }
 
