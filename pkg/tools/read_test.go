@@ -105,6 +105,35 @@ func TestReadTool(t *testing.T) {
 		}
 	})
 
+	t.Run("large file with limit", func(t *testing.T) {
+		largeFile := filepath.Join(resolvedDir, "large_limited.txt")
+		f, err := os.Create(largeFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString("line 1\nline 2\nline 3\n"); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		if err := f.Truncate(types.MaxReadFileSize + 1); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		f.Close()
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":   largeFile,
+			"offset": float64(2),
+			"limit":  float64(1),
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "line 2") {
+			t.Errorf("expected to contain 'line 2', got: %s", result.ForLLM)
+		}
+	})
+
 	t.Run("path outside allowed directory", func(t *testing.T) {
 		result := tool.Execute(context.Background(), map[string]interface{}{
 			"path": "/etc/passwd",

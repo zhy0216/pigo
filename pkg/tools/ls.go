@@ -45,14 +45,17 @@ func (t *LsTool) Parameters() map[string]interface{} {
 				"description": "Show hidden files (starting with '.') when true. Default: false.",
 			},
 		},
-		"required": []string{"path"},
 	}
 }
 
 func (t *LsTool) Execute(ctx context.Context, args map[string]interface{}) *types.ToolResult {
-	pathArg, err := util.ExtractString(args, "path")
-	if err != nil || pathArg == "" {
-		return types.ErrorResult("'path' parameter is required")
+	pathArg := util.ExtractOptionalString(args, "path", "")
+	if pathArg == "" {
+		if t.allowedDir != "" {
+			pathArg = t.allowedDir
+		} else {
+			pathArg = "."
+		}
 	}
 	showAll := util.ExtractBool(args, "all", false)
 
@@ -78,6 +81,7 @@ func (t *LsTool) Execute(ctx context.Context, args map[string]interface{}) *type
 	}
 
 	var lines []string
+	truncated := false
 	for _, entry := range entries {
 		name := entry.Name()
 
@@ -89,12 +93,16 @@ func (t *LsTool) Execute(ctx context.Context, args map[string]interface{}) *type
 		lines = append(lines, fmt.Sprintf("%s %s", indicator, name))
 
 		if len(lines) >= types.LsMaxEntries {
-			lines = append(lines, fmt.Sprintf("... (truncated, %d+ entries)", types.LsMaxEntries))
+			truncated = true
 			break
 		}
 	}
 
 	sort.Strings(lines)
+
+	if truncated {
+		lines = append(lines, fmt.Sprintf("... (truncated, %d+ entries)", types.LsMaxEntries))
+	}
 
 	if len(lines) == 0 {
 		return types.NewToolResult("(empty directory)")

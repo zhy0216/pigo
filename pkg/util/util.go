@@ -2,7 +2,9 @@ package util
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +87,95 @@ func FormatWithLineNumbers(content string, offset, limit int) string {
 	}
 
 	return result.String()
+}
+
+// FormatWithLineNumbersFromReader formats lines from a reader with line numbers.
+// It truncates long lines to MaxLineLength and supports offset/limit without
+// reading the full input into memory.
+func FormatWithLineNumbersFromReader(r io.Reader, offset, limit int) (string, error) {
+	if offset < 1 {
+		offset = 1
+	}
+
+	reader := bufio.NewReader(r)
+	var result strings.Builder
+	lineNum := 0
+	linesOutput := 0
+
+	for {
+		line, truncated, err := readLineWithLimit(reader, types.MaxLineLength)
+		if err != nil && err != io.EOF {
+			return result.String(), err
+		}
+		if err == io.EOF && line == "" && !truncated {
+			break
+		}
+
+		lineNum++
+		if lineNum >= offset {
+			if limit > 0 && linesOutput >= limit {
+				break
+			}
+			if truncated {
+				line += "..."
+			}
+			fmt.Fprintf(&result, "%6d\t%s\n", lineNum, line)
+			linesOutput++
+		}
+
+		if err == io.EOF {
+			break
+		}
+	}
+
+	return result.String(), nil
+}
+
+func readLineWithLimit(r *bufio.Reader, maxLen int) (string, bool, error) {
+	var buf bytes.Buffer
+	truncated := false
+
+	for {
+		frag, err := r.ReadSlice('\n')
+		if err != nil && err != bufio.ErrBufferFull && err != io.EOF {
+			return buf.String(), truncated, err
+		}
+
+		if len(frag) > 0 {
+			if frag[len(frag)-1] == '\n' {
+				frag = frag[:len(frag)-1]
+				if len(frag) > 0 && frag[len(frag)-1] == '\r' {
+					frag = frag[:len(frag)-1]
+				}
+			}
+
+			if !truncated && maxLen > 0 {
+				remaining := maxLen - buf.Len()
+				if remaining > 0 {
+					if len(frag) > remaining {
+						buf.Write(frag[:remaining])
+						truncated = true
+					} else {
+						buf.Write(frag)
+					}
+				} else {
+					truncated = true
+				}
+			}
+		}
+
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err == io.EOF {
+			if buf.Len() == 0 && len(frag) == 0 && !truncated {
+				return "", false, io.EOF
+			}
+			return buf.String(), truncated, io.EOF
+		}
+
+		return buf.String(), truncated, nil
+	}
 }
 
 // TruncateOutput limits output length by keeping the head and adds truncation notice.

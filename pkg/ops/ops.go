@@ -3,6 +3,7 @@ package ops
 import (
 	"bytes"
 	"context"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 // FileOps abstracts filesystem operations for testability.
 type FileOps interface {
 	ReadFile(path string) ([]byte, error)
+	Open(path string) (io.ReadCloser, error)
 	WriteFile(path string, data []byte, perm os.FileMode) error
 	Stat(path string) (os.FileInfo, error)
 	MkdirAll(path string, perm os.FileMode) error
@@ -32,7 +34,8 @@ type ExecOps interface {
 // RealFileOps implements FileOps using the real filesystem.
 type RealFileOps struct{}
 
-func (r *RealFileOps) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func (r *RealFileOps) ReadFile(path string) ([]byte, error)    { return os.ReadFile(path) }
+func (r *RealFileOps) Open(path string) (io.ReadCloser, error) { return os.Open(path) }
 func (r *RealFileOps) WriteFile(path string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(path, data, perm)
 }

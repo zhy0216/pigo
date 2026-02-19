@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/user/pigo/pkg/ops"
@@ -108,6 +109,27 @@ func TestGrepTool_NativeFallback(t *testing.T) {
 		// Should not find "fake" because .png is a binary extension
 		if result.ForLLM != "No matches found." {
 			t.Errorf("expected no matches in binary files, got: %s", result.ForLLM)
+		}
+	})
+
+	t.Run("context lines", func(t *testing.T) {
+		os.WriteFile(filepath.Join(dir, "context.txt"), []byte("one\nmatch\nthree\n"), 0644)
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"pattern":       "match",
+			"path":          dir,
+			"context_lines": float64(1),
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "context.txt:1  ") {
+			t.Errorf("expected context line with double-space separator, got: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "context.txt:2: ") {
+			t.Errorf("expected match line with colon separator, got: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "context.txt:3  ") {
+			t.Errorf("expected trailing context line, got: %s", result.ForLLM)
 		}
 	})
 }

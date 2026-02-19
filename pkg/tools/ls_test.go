@@ -153,10 +153,11 @@ func TestLsTool_AllowedDirBoundary(t *testing.T) {
 }
 
 func TestLsTool_MissingPath(t *testing.T) {
-	tool := NewLsTool("", &ops.RealFileOps{})
+	tmpDir, _ := filepath.EvalSymlinks(t.TempDir())
+	tool := NewLsTool(tmpDir, &ops.RealFileOps{})
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 
-	if !result.IsError {
-		t.Error("expected error for missing path")
+	if result.IsError {
+		t.Fatalf("unexpected error for default path: %s", result.ForLLM)
 	}
 }

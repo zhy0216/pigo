@@ -40,6 +40,23 @@ func TestFormatWithLineNumbers(t *testing.T) {
 	})
 }
 
+func TestFormatWithLineNumbersFromReader(t *testing.T) {
+	content := "line 1\nline 2\nline 3\n"
+	result, err := FormatWithLineNumbersFromReader(strings.NewReader(content), 2, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(result, "line 1") {
+		t.Errorf("should not contain line 1, got: %s", result)
+	}
+	if !strings.Contains(result, "line 2") {
+		t.Errorf("expected line 2, got: %s", result)
+	}
+	if strings.Contains(result, "line 3") {
+		t.Errorf("should not contain line 3 due to limit, got: %s", result)
+	}
+}
+
 func TestTruncateOutput(t *testing.T) {
 	t.Run("no truncation needed", func(t *testing.T) {
 		result := TruncateOutput("short", 100)

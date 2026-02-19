@@ -73,17 +73,31 @@ func (t *ReadTool) Execute(ctx context.Context, args map[string]interface{}) *ty
 		return types.ErrorResult(fmt.Sprintf("path is a directory: %s", path))
 	}
 
+	offset := util.ExtractInt(args, "offset", 1)
+	limit := util.ExtractInt(args, "limit", 0)
+
+	if info.Size() > types.MaxReadFileSize && limit == 0 {
+		return types.ErrorResult(fmt.Sprintf("file is too large (%d bytes, max %d). Provide a positive limit to read a portion", info.Size(), types.MaxReadFileSize))
+	}
+
 	if info.Size() > types.MaxReadFileSize {
-		return types.ErrorResult(fmt.Sprintf("file is too large (%d bytes, max %d). Use offset and limit to read a portion", info.Size(), types.MaxReadFileSize))
+		f, err := t.fileOps.Open(resolvedPath)
+		if err != nil {
+			return types.ErrorResult(fmt.Sprintf("failed to open file: %v", err))
+		}
+		defer f.Close()
+
+		formatted, err := util.FormatWithLineNumbersFromReader(f, offset, limit)
+		if err != nil {
+			return types.ErrorResult(fmt.Sprintf("failed to read file: %v", err))
+		}
+		return types.NewToolResult(formatted)
 	}
 
 	content, err := t.fileOps.ReadFile(resolvedPath)
 	if err != nil {
 		return types.ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
-
-	offset := util.ExtractInt(args, "offset", 1)
-	limit := util.ExtractInt(args, "limit", 0)
 
 	formatted := util.FormatWithLineNumbers(string(content), offset, limit)
 	return types.NewToolResult(formatted)

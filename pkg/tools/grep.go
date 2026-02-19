@@ -239,24 +239,70 @@ func (t *GrepTool) executeNative(pattern, searchPath, include string, contextLin
 		lines := strings.Split(string(content), "\n")
 		relPath := util.RelativizePath(path, searchPath)
 
+		matchLines := make([]bool, len(lines))
+		hasMatch := false
+		limitHit := false
+
 		for i, line := range lines {
 			if re.MatchString(line) {
 				matches++
 				if matches > types.GrepMaxMatches {
-					result.WriteString(fmt.Sprintf("\n[matches truncated at %d]", types.GrepMaxMatches))
-					return fmt.Errorf("match limit reached")
+					limitHit = true
+					break
 				}
-				displayLine := line
-				if len(displayLine) > types.GrepMaxLine {
-					displayLine = displayLine[:types.GrepMaxLine] + "..."
-				}
-				fmt.Fprintf(&result, "%s:%d: %s\n", relPath, i+1, displayLine)
+				matchLines[i] = true
+				hasMatch = true
+			}
+		}
 
-				if result.Len() >= types.GrepMaxBytes {
-					result.WriteString(fmt.Sprintf("\n[output truncated at %dKB]", types.GrepMaxBytes/1024))
-					return fmt.Errorf("output limit reached")
+		if !hasMatch {
+			return nil
+		}
+
+		outputLines := matchLines
+		if contextLines > 0 {
+			outputLines = make([]bool, len(lines))
+			for i, isMatch := range matchLines {
+				if !isMatch {
+					continue
+				}
+				start := i - contextLines
+				if start < 0 {
+					start = 0
+				}
+				end := i + contextLines
+				if end >= len(lines) {
+					end = len(lines) - 1
+				}
+				for j := start; j <= end; j++ {
+					outputLines[j] = true
 				}
 			}
+		}
+
+		for i, line := range lines {
+			if !outputLines[i] {
+				continue
+			}
+			displayLine := line
+			if len(displayLine) > types.GrepMaxLine {
+				displayLine = displayLine[:types.GrepMaxLine] + "..."
+			}
+			if matchLines[i] {
+				fmt.Fprintf(&result, "%s:%d: %s\n", relPath, i+1, displayLine)
+			} else {
+				fmt.Fprintf(&result, "%s:%d  %s\n", relPath, i+1, displayLine)
+			}
+
+			if result.Len() >= types.GrepMaxBytes {
+				result.WriteString(fmt.Sprintf("\n[output truncated at %dKB]", types.GrepMaxBytes/1024))
+				return fmt.Errorf("output limit reached")
+			}
+		}
+
+		if limitHit {
+			result.WriteString(fmt.Sprintf("\n[matches truncated at %d]", types.GrepMaxMatches))
+			return fmt.Errorf("match limit reached")
 		}
 
 		return nil
