@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/user/pigo/pkg/config"
 	"github.com/user/pigo/pkg/llm"
 	"github.com/user/pigo/pkg/memory"
 	"github.com/user/pigo/pkg/ops"
@@ -16,31 +17,7 @@ import (
 	"github.com/user/pigo/pkg/skills"
 	"github.com/user/pigo/pkg/tools"
 	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
 )
-
-// Config holds the application configuration.
-type Config struct {
-	APIKey  string
-	BaseURL string
-	Model   string
-	APIType string // "chat" or "responses"
-}
-
-// LoadConfig loads configuration from environment variables.
-func LoadConfig() (*Config, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY environment variable is required")
-	}
-
-	return &Config{
-		APIKey:  apiKey,
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		Model:   util.GetEnvOrDefault("PIGO_MODEL", "gpt-4o"),
-		APIType: util.GetEnvOrDefault("OPENAI_API_TYPE", "chat"),
-	}, nil
-}
 
 // Agent represents the pigo application.
 type Agent struct {
@@ -56,9 +33,11 @@ type Agent struct {
 	deduplicator *memory.MemoryDeduplicator
 }
 
+const memoryContextPrefix = "## Retrieved Memories (auto)\n"
+
 // NewAgent creates a new Agent instance.
-func NewAgent(cfg *Config) *Agent {
-	client := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
+func NewAgent(cfg *config.Config) *Agent {
+	client := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType, cfg.EmbedModel)
 	registry := tools.NewToolRegistry()
 
 	cwd, err := os.Getwd()
@@ -320,6 +299,16 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 
 	a.compactMessages(ctx)
 
+	memoryInjected := a.injectMemoryContext(ctx, input)
+	if memoryInjected {
+		defer a.removeMemoryContext()
+	}
+
+	turnMessages := []types.Message{}
+	if len(a.messages) > 0 {
+		turnMessages = append(turnMessages, a.messages[len(a.messages)-1])
+	}
+
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentStart})
 
 	maxIterations := types.MaxAgentIterations
@@ -359,20 +348,24 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		a.addUsage(response.Usage)
 
 		if len(response.ToolCalls) > 0 {
-			a.messages = append(a.messages, types.Message{
+			assistantMsg := types.Message{
 				Role:      "assistant",
 				Content:   response.Content,
 				ToolCalls: response.ToolCalls,
-			})
+			}
+			a.messages = append(a.messages, assistantMsg)
+			turnMessages = append(turnMessages, assistantMsg)
 
 			for i, tc := range response.ToolCalls {
 				if ctx.Err() != nil {
 					for j := i; j < len(response.ToolCalls); j++ {
-						a.messages = append(a.messages, types.Message{
+						skipMsg := types.Message{
 							Role:       "tool",
 							Content:    "Skipped due to user interrupt",
 							ToolCallID: response.ToolCalls[j].ID,
-						})
+						}
+						a.messages = append(a.messages, skipMsg)
+						turnMessages = append(turnMessages, skipMsg)
 					}
 					break
 				}
@@ -408,11 +401,13 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 					output = buf.String()
 				}
 
-				a.messages = append(a.messages, types.Message{
+				toolMsg := types.Message{
 					Role:       "tool",
 					Content:    result.ForLLM,
 					ToolCallID: tc.ID,
-				})
+				}
+				a.messages = append(a.messages, toolMsg)
+				turnMessages = append(turnMessages, toolMsg)
 				a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name, Content: output})
 			}
 
@@ -420,14 +415,20 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 			continue
 		}
 
-		a.messages = append(a.messages, types.Message{
+		assistantMsg := types.Message{
 			Role:    "assistant",
 			Content: response.Content,
-		})
+		}
+		a.messages = append(a.messages, assistantMsg)
+		turnMessages = append(turnMessages, assistantMsg)
 		a.events.Emit(types.AgentEvent{Type: types.EventMessageEnd, Content: response.Content})
 		a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
 		completed = true
 		break
+	}
+
+	if completed && a.extractor != nil && ctx.Err() == nil && len(turnMessages) > 1 {
+		a.extractor.ExtractMemories(ctx, turnMessages)
 	}
 
 	if !completed && agentErr == nil {
@@ -436,6 +437,59 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentEnd, Error: agentErr})
 	return agentErr
+}
+
+func (a *Agent) injectMemoryContext(ctx context.Context, query string) bool {
+	if a.Memory == nil || a.Memory.Count() == 0 {
+		return false
+	}
+
+	const maxResults = 5
+	var results []*memory.Memory
+
+	vec, err := a.client.Embed(ctx, query)
+	if err == nil && len(vec) > 0 {
+		results = a.Memory.SearchByVector(vec, maxResults, "")
+	}
+
+	if len(results) == 0 {
+		results = a.Memory.SearchByKeyword(query, maxResults)
+	}
+
+	if len(results) == 0 {
+		return false
+	}
+
+	for _, m := range results {
+		a.Memory.IncrementActive(m.ID)
+	}
+	_ = a.Memory.Save()
+
+	var buf strings.Builder
+	buf.WriteString(memoryContextPrefix)
+	buf.WriteString("Use these only if relevant to the user's current request.\n\n")
+	for _, m := range results {
+		fmt.Fprintf(&buf, "- [%s] %s\n", m.Category, m.Abstract)
+		if m.Overview != "" && m.Overview != m.Abstract {
+			fmt.Fprintf(&buf, "  %s\n", m.Overview)
+		}
+	}
+
+	a.messages = append(a.messages, types.Message{
+		Role:    "system",
+		Content: buf.String(),
+	})
+
+	return true
+}
+
+func (a *Agent) removeMemoryContext() {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == "system" && strings.HasPrefix(a.messages[i].Content, memoryContextPrefix) {
+			a.messages = append(a.messages[:i], a.messages[i+1:]...)
+			return
+		}
+	}
 }
 
 // defaultOutputHandler is the default event subscriber that handles console output.
