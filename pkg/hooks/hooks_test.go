@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewHookManager_empty(t *testing.T) {
@@ -213,5 +214,24 @@ func TestRun_envVarsAvailable(t *testing.T) {
 	got := strings.TrimSpace(string(data))
 	if got != "read" {
 		t.Errorf("PIGO_TOOL_NAME = %q, want %q", got, "read")
+	}
+}
+
+func TestRun_timeout(t *testing.T) {
+	blocking := true
+	plugins := []PluginConfig{{
+		Name: "slow",
+		Hooks: map[string][]HookConfig{"tool_start": {{Command: "sleep 30", Blocking: &blocking, Timeout: 1}}},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
+	start := time.Now()
+	err := mgr.Run(context.Background(), hctx)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout took too long: %v", elapsed)
 	}
 }
