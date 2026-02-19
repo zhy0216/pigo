@@ -12,7 +12,7 @@ Holds an `openai.Client` instance, a model name, and an API type (`"chat"` or `"
 
 | Function / Method | Description |
 |---|---|
-| `NewClient(apiKey, baseURL, model, apiType) *Client` | Creates a configured client with automatic retries (up to 3) |
+| `NewClient(apiKey, baseURL, model, apiType, embedModel) *Client` | Creates a configured client with automatic retries (up to 3) |
 | `Chat(ctx, messages, toolDefs) (*ChatResponse, error)` | Non-streaming chat request via Chat Completions or Responses API |
 | `ChatStream(ctx, messages, toolDefs, w) (*ChatResponse, error)` | Streaming chat request; text deltas written to `w` as they arrive |
 | `Embed(ctx, text) ([]float64, error)` | Generates an embedding vector using the configured embedding model |
@@ -29,12 +29,9 @@ Both modes support streaming and non-streaming variants.
 
 ## Configuration
 
-| Env Var | Default | Used By |
-|---|---|---|
-| `PIGO_EMBED_MODEL` | `text-embedding-3-small` | `Embed()` |
+The embedding model is configured via the `embedModel` parameter passed to `NewClient` (default: `text-embedding-3-small`).
 
 ## Dependencies
 
 - `github.com/openai/openai-go` — SDK for Chat Completions, Responses API, and Embeddings
 - `pkg/types` — Shared `Message`, `ChatResponse`, `ToolCall`, `TokenUsage` types
-- `pkg/util` — `GetEnvOrDefault` helper

@@ -376,11 +376,13 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				var args map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
 					result := types.ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-					a.messages = append(a.messages, types.Message{
+					errMsg := types.Message{
 						Role:       "tool",
 						Content:    result.ForLLM,
 						ToolCallID: tc.ID,
-					})
+					}
+					a.messages = append(a.messages, errMsg)
+					turnMessages = append(turnMessages, errMsg)
 					a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name})
 					continue
 				}
