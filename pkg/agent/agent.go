@@ -63,13 +63,16 @@ func NewAgent(cfg *config.Config) *Agent {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
 	}
 
-	systemPrompt := `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
+	systemPrompt := cfg.SystemPrompt
+	if systemPrompt == "" {
+		systemPrompt = `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
 
 When helping with coding tasks:
 1. Read files before modifying them
 2. Make targeted edits rather than rewriting entire files
 3. Test your changes when possible
 4. Be concise in your explanations`
+	}
 
 	systemPrompt += skills.FormatSkillsForPrompt(loadedSkills)
 

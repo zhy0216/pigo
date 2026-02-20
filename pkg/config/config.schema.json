@@ -35,6 +35,10 @@
         "type": "string"
       },
       "description": "List of plugin names to enable (must be defined in plugins.json)."
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "Custom system prompt to replace the default one."
     }
   },
   "additionalProperties": false
