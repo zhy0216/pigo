@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,10 +21,21 @@ func clearEnv(t *testing.T) {
 	}
 }
 
+// writeEmptyConfig writes an empty JSON config to the given directory,
+// preventing EnsureWorkspace from writing the seed defaults.
+func writeEmptyConfig(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("failed to write empty config: %v", err)
+	}
+}
+
 func TestLoadEnvVarsOnly(t *testing.T) {
 	clearEnv(t)
-	// Point PIGO_HOME to a dir with no config file.
-	t.Setenv("PIGO_HOME", t.TempDir())
+	// Point PIGO_HOME to a dir with an empty config file so env vars take effect.
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	writeEmptyConfig(t, dir)
 	t.Setenv("OPENAI_API_KEY", "sk-test-123")
 	t.Setenv("OPENAI_BASE_URL", "https://custom.api.com/v1")
 	t.Setenv("PIGO_MODEL", "gpt-3.5-turbo")
@@ -58,8 +70,8 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.BaseURL != "" {
-		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "")
+	if cfg.BaseURL != "https://api.openai.com/v1" {
+		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "https://api.openai.com/v1")
 	}
 	if cfg.Model != "gpt-4o" {
 		t.Errorf("Model = %q, want %q", cfg.Model, "gpt-4o")
@@ -270,14 +282,28 @@ func TestEnsureWorkspaceCreatesDirectories(t *testing.T) {
 		}
 	}
 
-	// Check that config.json was created
+	// Check that config.json was created with default values
 	configPath := filepath.Join(dir, "config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("expected config.json to exist: %v", err)
 	}
-	if len(data) == 0 {
-		t.Error("config.json should not be empty")
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("config.json is not valid JSON: %v", err)
+	}
+	if parsed["model"] != "gpt-4o" {
+		t.Errorf("model = %v, want %q", parsed["model"], "gpt-4o")
+	}
+	if parsed["api_type"] != "chat" {
+		t.Errorf("api_type = %v, want %q", parsed["api_type"], "chat")
+	}
+	if parsed["base_url"] != "https://api.openai.com/v1" {
+		t.Errorf("base_url = %v, want %q", parsed["base_url"], "https://api.openai.com/v1")
+	}
+	if parsed["api_key"] != "" {
+		t.Errorf("api_key = %v, want empty string", parsed["api_key"])
 	}
 }
 

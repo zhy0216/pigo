@@ -27,6 +27,15 @@ type fileConfig struct {
 	Plugins []hooks.PluginConfig `json:"plugins,omitempty"`
 }
 
+// defaultFileConfig is used only for writing the seed config.json.
+// It omits the omitempty tags so all fields appear in the output.
+type defaultFileConfig struct {
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url"`
+	Model   string `json:"model"`
+	APIType string `json:"api_type"`
+}
+
 // resolve returns the first non-empty value from the provided strings.
 func resolve(values ...string) string {
 	for _, v := range values {
@@ -98,8 +107,13 @@ func EnsureWorkspace() error {
 
 	configPath := filepath.Join(homeDir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		defaultConfig := fileConfig{}
-		data, err := json.MarshalIndent(defaultConfig, "", "  ")
+		seed := defaultFileConfig{
+			APIKey:  "",
+			BaseURL: "https://api.openai.com/v1",
+			Model:   "gpt-4o",
+			APIType: "chat",
+		}
+		data, err := json.MarshalIndent(seed, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal default config: %w", err)
 		}
