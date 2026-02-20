@@ -334,9 +334,22 @@ func TestEnsureWorkspaceCreatesDirectories(t *testing.T) {
 		t.Fatalf("expected config.json to exist: %v", err)
 	}
 
+	// Check that config.schema.json was created
+	schemaPath := filepath.Join(dir, "config.schema.json")
+	schemaData, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatalf("expected config.schema.json to exist: %v", err)
+	}
+	if len(schemaData) == 0 {
+		t.Error("config.schema.json is empty")
+	}
+
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("config.json is not valid JSON: %v", err)
+	}
+	if parsed["$schema"] != "./config.schema.json" {
+		t.Errorf("$schema = %v, want %q", parsed["$schema"], "./config.schema.json")
 	}
 	if parsed["model"] != "gpt-4o" {
 		t.Errorf("model = %v, want %q", parsed["model"], "gpt-4o")

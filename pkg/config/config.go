@@ -1,6 +1,7 @@
 package config
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/user/pigo/pkg/hooks"
 )
+
+//go:embed config.schema.json
+var configSchema []byte
 
 // Config holds the application configuration.
 type Config struct {
@@ -30,6 +34,7 @@ type fileConfig struct {
 // defaultFileConfig is used only for writing the seed config.json.
 // It omits the omitempty tags so all fields appear in the output.
 type defaultFileConfig struct {
+	Schema  string `json:"$schema"`
 	APIKey  string `json:"api_key"`
 	BaseURL string `json:"base_url"`
 	Model   string `json:"model"`
@@ -110,9 +115,16 @@ func EnsureWorkspace() error {
 		}
 	}
 
+	// Always write/update the schema file.
+	schemaPath := filepath.Join(homeDir, "config.schema.json")
+	if err := os.WriteFile(schemaPath, configSchema, 0644); err != nil {
+		return fmt.Errorf("failed to write schema file %s: %w", schemaPath, err)
+	}
+
 	configPath := filepath.Join(homeDir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		seed := defaultFileConfig{
+			Schema:  "./config.schema.json",
 			APIKey:  "",
 			BaseURL: "https://api.openai.com/v1",
 			Model:   "gpt-4o",

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "pigo configuration",
+  "description": "Configuration file for the pigo AI coding assistant CLI.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to the JSON Schema file."
+    },
+    "api_key": {
+      "type": "string",
+      "description": "OpenAI API key. Can also be set via OPENAI_API_KEY env var."
+    },
+    "base_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "API endpoint URL. Defaults to https://api.openai.com/v1.",
+      "default": "https://api.openai.com/v1"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model name to use. Defaults to gpt-4o.",
+      "default": "gpt-4o"
+    },
+    "api_type": {
+      "type": "string",
+      "enum": ["chat", "responses"],
+      "description": "OpenAI API mode. Defaults to chat.",
+      "default": "chat"
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of plugin names to enable (must be defined in plugins.json)."
+    }
+  },
+  "additionalProperties": false
+}
