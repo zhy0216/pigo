@@ -250,6 +250,61 @@ func TestLoadWithUserHomeDir(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkspaceCreatesDirectories(t *testing.T) {
+	clearEnv(t)
+	dir := filepath.Join(t.TempDir(), "new-pigo-home")
+	t.Setenv("PIGO_HOME", dir)
+
+	if err := EnsureWorkspace(); err != nil {
+		t.Fatalf("EnsureWorkspace() error: %v", err)
+	}
+
+	// Check that home dir and skills subdir were created
+	for _, sub := range []string{"", "skills"} {
+		path := filepath.Join(dir, sub)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("expected directory %s to exist: %v", path, err)
+		} else if !info.IsDir() {
+			t.Errorf("expected %s to be a directory", path)
+		}
+	}
+}
+
+func TestEnsureWorkspaceIdempotent(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+
+	// Call twice — second call should not error
+	if err := EnsureWorkspace(); err != nil {
+		t.Fatalf("first EnsureWorkspace() error: %v", err)
+	}
+	if err := EnsureWorkspace(); err != nil {
+		t.Fatalf("second EnsureWorkspace() error: %v", err)
+	}
+}
+
+func TestLoadCreatesWorkspace(t *testing.T) {
+	clearEnv(t)
+	dir := filepath.Join(t.TempDir(), "fresh")
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.APIKey != "sk-test" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "sk-test")
+	}
+
+	// Verify workspace was created
+	if _, err := os.Stat(filepath.Join(dir, "skills")); err != nil {
+		t.Errorf("expected skills directory to exist after Load(): %v", err)
+	}
+}
+
 func TestResolve(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -41,6 +41,10 @@ func resolve(values ...string) string {
 // and defaults. Priority: config file > env var > default.
 // Returns an error if the API key is not set from any source.
 func Load() (*Config, error) {
+	if err := EnsureWorkspace(); err != nil {
+		return nil, err
+	}
+
 	fc, err := readConfigFile()
 	if err != nil {
 		return nil, err
@@ -61,18 +65,47 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// HomeDir returns the pigo home directory path (~/.pigo or PIGO_HOME).
+func HomeDir() (string, error) {
+	homeDir := os.Getenv("PIGO_HOME")
+	if homeDir == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to determine home directory: %w", err)
+		}
+		homeDir = filepath.Join(h, ".pigo")
+	}
+	return homeDir, nil
+}
+
+// EnsureWorkspace creates the pigo home directory and its subdirectories
+// if they do not already exist.
+func EnsureWorkspace() error {
+	homeDir, err := HomeDir()
+	if err != nil {
+		return err
+	}
+
+	dirs := []string{
+		homeDir,
+		filepath.Join(homeDir, "skills"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
 // readConfigFile reads and parses the JSON config file.
 // Returns a zero-value fileConfig if the file does not exist.
 func readConfigFile() (fileConfig, error) {
 	var fc fileConfig
 
-	homeDir := os.Getenv("PIGO_HOME")
-	if homeDir == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return fc, fmt.Errorf("failed to determine home directory: %w", err)
-		}
-		homeDir = filepath.Join(h, ".pigo")
+	homeDir, err := HomeDir()
+	if err != nil {
+		return fc, err
 	}
 
 	path := filepath.Join(homeDir, "config.json")
