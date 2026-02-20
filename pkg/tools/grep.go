@@ -11,9 +11,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 // GrepTool searches files for patterns using ripgrep or a Go fallback.

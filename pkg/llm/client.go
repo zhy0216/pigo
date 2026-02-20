@@ -13,7 +13,7 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 // Client wraps the OpenAI client for chat completions with tools.

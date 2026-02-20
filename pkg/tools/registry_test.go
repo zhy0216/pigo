@@ -3,8 +3,8 @@ package tools
 import (
 	"testing"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 func TestToolRegistry(t *testing.T) {

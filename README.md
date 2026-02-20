@@ -1,6 +1,6 @@
 # pigo
 
-[![CI](https://github.com/user/pigo/actions/workflows/ci.yml/badge.svg)](https://github.com/user/pigo/actions/workflows/ci.yml)
+[![CI](https://github.com/zhy0216/pigo/actions/workflows/ci.yml/badge.svg)](https://github.com/zhy0216/pigo/actions/workflows/ci.yml)
 
 Minimal AI coding assistant in Go, inspired by [nanocode](https://github.com/1rgs/nanocode).
 

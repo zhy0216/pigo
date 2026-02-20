@@ -163,7 +163,7 @@ func TestLoadWithPlugins(t *testing.T) {
 ```
 
 Then modify `pkg/config/config.go`:
-- Import `"github.com/user/pigo/pkg/hooks"`
+- Import `"github.com/zhy0216/pigo/pkg/hooks"`
 - Add `Plugins []hooks.PluginConfig` to `Config` struct
 - Add `Plugins []hooks.PluginConfig \`json:"plugins,omitempty"\`` to `fileConfig` struct
 - Set `cfg.Plugins = fc.Plugins` in `Load()`
@@ -734,7 +734,7 @@ git commit -m "test: add hook timeout test"
 
 In `pkg/agent/agent.go`:
 
-1. Add import: `"github.com/user/pigo/pkg/hooks"`
+1. Add import: `"github.com/zhy0216/pigo/pkg/hooks"`
 2. Add field to Agent struct (after `events`):
    ```go
    hookMgr  *hooks.HookManager

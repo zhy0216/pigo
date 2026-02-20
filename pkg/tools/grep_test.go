@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 func TestGrepTool_Name(t *testing.T) {

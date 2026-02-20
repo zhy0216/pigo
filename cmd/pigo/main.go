@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/user/pigo/pkg/agent"
-	"github.com/user/pigo/pkg/config"
-	"github.com/user/pigo/pkg/skills"
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/agent"
+	"github.com/zhy0216/pigo/pkg/config"
+	"github.com/zhy0216/pigo/pkg/skills"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 // Version is set at build time via ldflags.

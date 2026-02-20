@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/ops"
 )
 
 func TestBashTool(t *testing.T) {

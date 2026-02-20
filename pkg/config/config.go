@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/user/pigo/pkg/hooks"
+	"github.com/zhy0216/pigo/pkg/hooks"
 )
 
 //go:embed config.schema.json

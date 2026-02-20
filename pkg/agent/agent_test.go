@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/pigo/pkg/config"
-	"github.com/user/pigo/pkg/skills"
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/config"
+	"github.com/zhy0216/pigo/pkg/skills"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 // writeSSEResponse converts a standard chat completion response map into SSE

@@ -1,4 +1,4 @@
-module github.com/user/pigo
+module github.com/zhy0216/pigo
 
 go 1.25.0
 

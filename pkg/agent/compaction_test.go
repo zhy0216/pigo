@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/pigo/pkg/config"
-	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/config"
+	"github.com/zhy0216/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 func TestExtractPathFromArgs(t *testing.T) {

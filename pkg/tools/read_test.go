@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 func TestReadTool(t *testing.T) {

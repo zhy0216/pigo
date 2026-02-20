@@ -317,7 +317,7 @@ git commit -m "feat: add pkg/config with JSON config file support"
 
 Remove the `Config` struct (lines 22-28) and `LoadConfig` function (lines 30-43).
 
-Change the import to include `"github.com/user/pigo/pkg/config"`.
+Change the import to include `"github.com/zhy0216/pigo/pkg/config"`.
 
 Change `NewAgent(cfg *Config)` to `NewAgent(cfg *config.Config)`.
 
@@ -333,7 +333,7 @@ Replace all `&Config{...}` with `&config.Config{...}`.
 
 Remove `TestLoadConfig` (it's now in `pkg/config/config_test.go`).
 
-Add import `"github.com/user/pigo/pkg/config"`.
+Add import `"github.com/zhy0216/pigo/pkg/config"`.
 
 **Step 3: Run tests**
 
@@ -433,13 +433,13 @@ git commit -m "refactor: thread embed model through LLM client"
 
 **Step 1: Update imports**
 
-Replace `"github.com/user/pigo/pkg/agent"` import usage for config:
+Replace `"github.com/zhy0216/pigo/pkg/agent"` import usage for config:
 
 ```go
 import (
 	...
-	"github.com/user/pigo/pkg/agent"
-	"github.com/user/pigo/pkg/config"
+	"github.com/zhy0216/pigo/pkg/agent"
+	"github.com/zhy0216/pigo/pkg/config"
 	...
 )
 ```

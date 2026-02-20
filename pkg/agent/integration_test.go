@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/tools"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/tools"
 )
 
 func TestIntegration_ReadWriteEditWorkflow(t *testing.T) {

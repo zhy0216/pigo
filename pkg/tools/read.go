@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 // ReadTool reads file contents with line numbers.

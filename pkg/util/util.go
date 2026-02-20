@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/types"
 )
 
 // sensitiveEnvPrefixes lists environment variable prefixes that should be

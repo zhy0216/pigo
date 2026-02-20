@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/pigo/pkg/config"
-	"github.com/user/pigo/pkg/hooks"
-	"github.com/user/pigo/pkg/llm"
-	"github.com/user/pigo/pkg/ops"
-	"github.com/user/pigo/pkg/skills"
-	"github.com/user/pigo/pkg/tools"
-	"github.com/user/pigo/pkg/types"
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/config"
+	"github.com/zhy0216/pigo/pkg/hooks"
+	"github.com/zhy0216/pigo/pkg/llm"
+	"github.com/zhy0216/pigo/pkg/ops"
+	"github.com/zhy0216/pigo/pkg/skills"
+	"github.com/zhy0216/pigo/pkg/tools"
+	"github.com/zhy0216/pigo/pkg/types"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 // Agent represents the pigo application.

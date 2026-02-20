@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/user/pigo/pkg/util"
+	"github.com/zhy0216/pigo/pkg/util"
 )
 
 // Skill represents a loaded skill definition.
