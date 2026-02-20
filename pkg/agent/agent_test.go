@@ -172,8 +172,8 @@ func TestNewAgent(t *testing.T) {
 	}
 
 	tools := agent.GetRegistry().List()
-	if len(tools) != 7 {
-		t.Errorf("expected 7 tools, got %d", len(tools))
+	if len(tools) != 8 {
+		t.Errorf("expected 8 tools, got %d", len(tools))
 	}
 }
 

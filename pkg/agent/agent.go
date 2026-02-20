@@ -63,6 +63,8 @@ func NewAgent(cfg *config.Config) *Agent {
 		fmt.Fprintf(os.Stderr, "skill warning: %s (%s)\n", d.Message, d.Path)
 	}
 
+	registry.Register(tools.NewUseSkillTool(loadedSkills))
+
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
 		systemPrompt = `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
