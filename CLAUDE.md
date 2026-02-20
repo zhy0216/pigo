@@ -29,8 +29,8 @@ Multi-package layout under `cmd/` and `pkg/`:
 
 - **Entry point**: `cmd/pigo/main.go` — CLI loop, signal handling (Ctrl-C cancels turn, double Ctrl-C exits), skill command expansion
 - **Agent**: `pkg/agent/` — `Agent` struct, `HandleCommand` (slash commands: `/q`, `/c`, `/usage`, `/skills`, `/plugins`, `/model`), `ProcessInput` (agent loop, max 10 iterations), proactive context compaction
-- **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution, plugin definitions
-- **Hooks**: `pkg/hooks/` — Event-driven plugin hook system for tool interception, blocking/async execution, env-var-based context passing
+- **Config**: `pkg/config/` — JSON config file loading (`~/.pigo/config.json`), env var merging, priority resolution, plugin name resolution from `plugins.json`, workspace bootstrapping (`EnsureWorkspace`), embedded JSON Schema
+- **Hooks**: `pkg/hooks/` — Event-driven plugin hook system for tool interception, blocking/async/context execution, env-var-based context passing
 - **LLM client**: `pkg/llm/` — OpenAI client supporting Chat Completions and Responses API modes, streaming
 - **Tool framework**: `pkg/tools/` — `ToolRegistry` (thread-safe) + 7 tools: read, write, edit, bash, grep, find, ls
 - **Skills**: `pkg/skills/` — Markdown skill files from `~/.pigo/skills/` (user) and `./.pigo/skills/` (project), YAML frontmatter
@@ -67,12 +67,14 @@ All variables below can also be set in `~/.pigo/config.json` (config file takes 
 | `PIGO_MEMPROFILE` | No | — | Write heap profile to this path on exit |
 | `PIGO_HOME` | No | `~/.pigo` | Override base directory for config and data |
 
+Config file (`~/.pigo/config.json`) also supports `system_prompt` for custom system prompts and `plugins` (string array of plugin names resolved from `~/.pigo/plugins.json`).
+
 ## Code Style
 
 - Go standard formatting (`gofmt`)
 - No external dependencies beyond `openai-go` (and its transitive deps)
 - Tests use temporary directories; clean up after themselves
-- Tool implementations follow the pattern in existing `pkg/tools/tool_*.go` files
+- Tool implementations follow the pattern in existing `pkg/tools/*.go` files (e.g., `read.go`, `bash.go`)
 - Errors returned via `ErrorResult()`, not panics
 - Output truncation: 10,000 chars tail-kept (bash), 500 chars per line (read), 50KB (grep/find)
 

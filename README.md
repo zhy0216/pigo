@@ -82,16 +82,8 @@ pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields 
   "base_url": "https://openrouter.ai/api/v1",
   "model": "anthropic/claude-3.5-sonnet",
   "api_type": "chat",
-  "plugins": [
-    {
-      "name": "my-logger",
-      "hooks": {
-        "tool_start": [
-          { "command": "echo \"Running $PIGO_TOOL_NAME\"" }
-        ]
-      }
-    }
-  ]
+  "system_prompt": "You are a helpful coding assistant.",
+  "plugins": ["my-logger"]
 }
 ```
 
@@ -103,6 +95,10 @@ pigo supports an optional JSON config file at `~/.pigo/config.json`. All fields 
 | `base_url` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
 | `model` | `PIGO_MODEL` | `gpt-4o` |
 | `api_type` | `OPENAI_API_TYPE` | `chat` |
+| `system_prompt` | — | (built-in default) |
+| `plugins` | — | `[]` |
+
+The `plugins` field is an array of plugin names resolved from `~/.pigo/plugins.json`.
 
 ## Environment Variables
 
@@ -204,7 +200,7 @@ List directory contents with type indicators.
 
 ## Plugins
 
-Plugins define hooks that run shell commands in response to agent lifecycle events. Configure them in the config file under the `plugins` key.
+Plugins define hooks that run shell commands in response to agent lifecycle events. Plugin definitions live in `~/.pigo/plugins.json`, and are activated by listing their names in the `plugins` array of `config.json`.
 
 ### Events
 
@@ -225,6 +221,7 @@ Plugins define hooks that run shell commands in response to agent lifecycle even
 | `match.tool` | string | (all tools) | Pipe-separated tool filter (e.g., `"bash\|write"`) |
 | `blocking` | bool | `true` | Wait for completion; async if false |
 | `timeout` | int | `10` | Timeout in seconds (blocking only) |
+| `type` | string | — | Set to `"context"` to capture stdout as a system message |
 
 Hooks receive context via environment variables: `PIGO_EVENT`, `PIGO_TOOL_NAME`, `PIGO_TOOL_OUTPUT`, etc.
 
@@ -239,9 +236,10 @@ pigo/
 │   │   ├── agent.go          # Agent struct, ProcessInput loop, hook integration
 │   │   └── compaction.go     # Proactive context compaction
 │   ├── config/
-│   │   └── config.go         # JSON config file + env var merging
+│   │   ├── config.go         # JSON config file + env var merging, workspace bootstrap
+│   │   └── config.schema.json # Embedded JSON Schema for config.json
 │   ├── hooks/
-│   │   └── hooks.go          # Plugin hook manager, blocking/async execution
+│   │   └── hooks.go          # Plugin hook manager, blocking/async/context execution
 │   ├── llm/
 │   │   └── client.go         # OpenAI client (chat + responses API, streaming)
 │   ├── ops/
@@ -285,6 +283,7 @@ make help        # Show all available commands
 | Command | Description |
 |---------|-------------|
 | `make build` | Build the binary |
+| `make build-dev` | Build with memprofile support |
 | `make run` | Run from source |
 | `make clean` | Remove build artifacts and profiles |
 | `make test` | Run tests |
@@ -292,6 +291,7 @@ make help        # Show all available commands
 | `make test-cover` | Run tests with coverage report |
 | `make lint` | Run all linters (fmt + vet) |
 | `make prof-mem` | Run with memory profiling, then open in browser |
+| `make count` | Count lines of code |
 
 ### Memory Profiling
 

@@ -1,6 +1,6 @@
 # pkg/hooks
 
-Event-driven plugin hook system. Plugins define hooks that run shell commands in response to agent lifecycle events, enabling tool interception, logging, and custom workflows.
+Event-driven plugin hook system. Plugins define hooks that run shell commands in response to agent lifecycle events, enabling tool interception, logging, context injection, and custom workflows.
 
 ## Key Types
 
@@ -24,12 +24,22 @@ A single hook definition.
 | `Match` | *MatchRule | Optional conditions for when the hook runs |
 | `Blocking` | *bool | Defaults to true (blocking); set to false for async |
 | `Timeout` | int | Timeout in seconds (default: 10) |
+| `Type` | string | Set to `"context"` to capture stdout as a system message |
 
 ### MatchRule
 
 | Field | Type | Description |
 |---|---|---|
 | `Tool` | string | Pipe-separated tool names (e.g., `"bash\|write"`) |
+
+### ContextEntry
+
+Captured output from a context hook.
+
+| Field | Type | Description |
+|---|---|---|
+| `Plugin` | string | Plugin name that produced the output |
+| `Content` | string | Trimmed stdout content |
 
 ### HookContext
 
@@ -65,13 +75,14 @@ Event context passed to hooks via environment variables.
 | Function / Method | Description |
 |---|---|
 | `NewHookManager(plugins) *HookManager` | Creates a manager with only enabled plugins |
-| `Run(ctx, hctx) error` | Executes matching hooks; returns error only if a blocking `tool_start` hook fails |
+| `Run(ctx, hctx) ([]ContextEntry, error)` | Executes matching hooks; returns context entries and error (error only if a blocking `tool_start` hook fails) |
 | `GetPlugins() []PluginConfig` | Returns the list of active plugins |
 
 ## Execution Model
 
 - **Blocking hooks** (default): Run synchronously. On `tool_start`, a failure cancels the tool. On other events, failures are logged to stderr.
 - **Async hooks**: Fire-and-forget via `cmd.Start()`.
+- **Context hooks** (`type: "context"`): Run synchronously, capture stdout, and return it as `ContextEntry` values. The agent injects these as system messages into the conversation.
 - **Match rules**: Hooks without a match rule run for all tools. Pipe-separated tool names filter by tool.
 
 ## Dependencies
