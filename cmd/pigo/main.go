@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
-	"runtime/pprof"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,20 +21,7 @@ import (
 var Version string
 
 func main() {
-	if memProfile := os.Getenv("PIGO_MEMPROFILE"); memProfile != "" {
-		defer func() {
-			runtime.GC()
-			f, err := os.Create(memProfile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
-				return
-			}
-			defer f.Close()
-			if err := pprof.WriteHeapProfile(f); err != nil {
-				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
-			}
-		}()
-	}
+	defer setupMemProfile()()
 
 	cfg, err := config.Load()
 	if err != nil {
