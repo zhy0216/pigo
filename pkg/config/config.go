@@ -20,11 +20,11 @@ type Config struct {
 
 // fileConfig maps to the JSON config file structure.
 type fileConfig struct {
-	APIKey  string               `json:"api_key,omitempty"`
-	BaseURL string               `json:"base_url,omitempty"`
-	Model   string               `json:"model,omitempty"`
-	APIType string               `json:"api_type,omitempty"`
-	Plugins []hooks.PluginConfig `json:"plugins,omitempty"`
+	APIKey  string   `json:"api_key,omitempty"`
+	BaseURL string   `json:"base_url,omitempty"`
+	Model   string   `json:"model,omitempty"`
+	APIType string   `json:"api_type,omitempty"`
+	Plugins []string `json:"plugins,omitempty"`
 }
 
 // defaultFileConfig is used only for writing the seed config.json.
@@ -59,12 +59,17 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	plugins, err := resolvePlugins(fc.Plugins)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		APIKey:  resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY")),
 		BaseURL: resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
 		Model:   resolve(fc.Model, os.Getenv("PIGO_MODEL"), "gpt-4o"),
 		APIType: resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
-		Plugins: fc.Plugins,
+		Plugins: plugins,
 	}
 
 	if cfg.APIKey == "" {
@@ -150,4 +155,56 @@ func readConfigFile() (fileConfig, error) {
 	}
 
 	return fc, nil
+}
+
+// resolvePlugins reads plugins.json and resolves plugin names to full PluginConfig.
+// Unknown plugin names are silently skipped with a warning to stderr.
+func resolvePlugins(names []string) ([]hooks.PluginConfig, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	defs, err := readPluginsFile()
+	if err != nil {
+		return nil, err
+	}
+
+	var plugins []hooks.PluginConfig
+	for _, name := range names {
+		def, ok := defs[name]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: plugin %q not found in plugins.json, skipping\n", name)
+			continue
+		}
+		if def.Name == "" {
+			def.Name = name
+		}
+		plugins = append(plugins, def)
+	}
+	return plugins, nil
+}
+
+// readPluginsFile reads and parses the plugins.json file.
+// Returns an empty map if the file does not exist.
+func readPluginsFile() (map[string]hooks.PluginConfig, error) {
+	homeDir, err := HomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(homeDir, "plugins.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]hooks.PluginConfig{}, nil
+		}
+		return nil, fmt.Errorf("failed to read plugins file %s: %w", path, err)
+	}
+
+	var defs map[string]hooks.PluginConfig
+	if err := json.Unmarshal(data, &defs); err != nil {
+		return nil, fmt.Errorf("failed to parse plugins file %s: %w", path, err)
+	}
+
+	return defs, nil
 }

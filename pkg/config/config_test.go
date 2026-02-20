@@ -203,20 +203,24 @@ func TestLoadWithPlugins(t *testing.T) {
 	t.Setenv("PIGO_HOME", dir)
 	t.Setenv("OPENAI_API_KEY", "sk-test")
 
-	configJSON := `{
-		"plugins": [
-			{
-				"name": "test-plugin",
-				"hooks": {
-					"tool_start": [
-						{"command": "echo hello", "blocking": true, "timeout": 5}
-					]
-				}
-			}
-		]
-	}`
+	// config.json references plugin by name
+	configJSON := `{"plugins": ["test-plugin"]}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// plugins.json has the full definition
+	pluginsJSON := `{
+		"test-plugin": {
+			"hooks": {
+				"tool_start": [
+					{"command": "echo hello", "blocking": true, "timeout": 5}
+				]
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "plugins.json"), []byte(pluginsJSON), 0644); err != nil {
+		t.Fatalf("failed to write plugins.json: %v", err)
 	}
 
 	cfg, err := Load()
@@ -228,6 +232,47 @@ func TestLoadWithPlugins(t *testing.T) {
 	}
 	if cfg.Plugins[0].Name != "test-plugin" {
 		t.Errorf("plugin name = %q, want %q", cfg.Plugins[0].Name, "test-plugin")
+	}
+}
+
+func TestLoadWithUnknownPlugin(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	configJSON := `{"plugins": ["nonexistent"]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+	// No plugins.json — plugin should be skipped
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Plugins) != 0 {
+		t.Errorf("expected 0 plugins, got %d", len(cfg.Plugins))
+	}
+}
+
+func TestLoadWithNoPluginsFile(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	configJSON := `{"plugins": ["some-plugin"]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Plugins) != 0 {
+		t.Errorf("expected 0 plugins when plugins.json missing, got %d", len(cfg.Plugins))
 	}
 }
 
