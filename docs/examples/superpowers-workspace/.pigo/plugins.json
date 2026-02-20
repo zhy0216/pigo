@@ -1,0 +1,31 @@
+{
+  "conversation-logger": {
+    "name": "conversation-logger",
+    "hooks": {
+      "turn_start": [
+        {
+          "command": "./scripts/log-conversation.sh",
+          "blocking": false
+        }
+      ],
+      "turn_end": [
+        {
+          "command": "./scripts/log-conversation.sh",
+          "blocking": false
+        }
+      ],
+      "tool_start": [
+        {
+          "command": "./scripts/log-conversation.sh",
+          "blocking": false
+        }
+      ],
+      "tool_end": [
+        {
+          "command": "./scripts/log-conversation.sh",
+          "blocking": false
+        }
+      ]
+    }
+  }
+}
