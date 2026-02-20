@@ -78,8 +78,8 @@ func HomeDir() (string, error) {
 	return homeDir, nil
 }
 
-// EnsureWorkspace creates the pigo home directory and its subdirectories
-// if they do not already exist.
+// EnsureWorkspace creates the pigo home directory, its subdirectories,
+// and a default config.json if they do not already exist.
 func EnsureWorkspace() error {
 	homeDir, err := HomeDir()
 	if err != nil {
@@ -95,6 +95,20 @@ func EnsureWorkspace() error {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
+
+	configPath := filepath.Join(homeDir, "config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		defaultConfig := fileConfig{}
+		data, err := json.MarshalIndent(defaultConfig, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal default config: %w", err)
+		}
+		data = append(data, '\n')
+		if err := os.WriteFile(configPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write default config %s: %w", configPath, err)
+		}
+	}
+
 	return nil
 }
 

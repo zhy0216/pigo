@@ -269,6 +269,16 @@ func TestEnsureWorkspaceCreatesDirectories(t *testing.T) {
 			t.Errorf("expected %s to be a directory", path)
 		}
 	}
+
+	// Check that config.json was created
+	configPath := filepath.Join(dir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected config.json to exist: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("config.json should not be empty")
+	}
 }
 
 func TestEnsureWorkspaceIdempotent(t *testing.T) {
@@ -282,6 +292,32 @@ func TestEnsureWorkspaceIdempotent(t *testing.T) {
 	}
 	if err := EnsureWorkspace(); err != nil {
 		t.Fatalf("second EnsureWorkspace() error: %v", err)
+	}
+}
+
+func TestEnsureWorkspaceDoesNotOverwriteExistingConfig(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+
+	// Write a custom config first
+	configPath := filepath.Join(dir, "config.json")
+	custom := []byte(`{"model":"my-model"}`)
+	if err := os.WriteFile(configPath, custom, 0644); err != nil {
+		t.Fatalf("failed to write custom config: %v", err)
+	}
+
+	if err := EnsureWorkspace(); err != nil {
+		t.Fatalf("EnsureWorkspace() error: %v", err)
+	}
+
+	// Verify custom config was not overwritten
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if string(data) != string(custom) {
+		t.Errorf("config.json was overwritten: got %q, want %q", string(data), string(custom))
 	}
 }
 
@@ -302,6 +338,9 @@ func TestLoadCreatesWorkspace(t *testing.T) {
 	// Verify workspace was created
 	if _, err := os.Stat(filepath.Join(dir, "skills")); err != nil {
 		t.Errorf("expected skills directory to exist after Load(): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+		t.Errorf("expected config.json to exist after Load(): %v", err)
 	}
 }
 
