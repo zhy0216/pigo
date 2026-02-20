@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -22,6 +23,13 @@ type HookConfig struct {
 	Match    *MatchRule `json:"match,omitempty"`
 	Blocking *bool      `json:"blocking,omitempty"`
 	Timeout  int        `json:"timeout,omitempty"`
+	Type     string     `json:"type,omitempty"`
+}
+
+// ContextEntry holds captured stdout from a context hook.
+type ContextEntry struct {
+	Plugin  string
+	Content string
 }
 
 // MatchRule defines conditions for when a hook runs.
@@ -105,8 +113,10 @@ const defaultTimeout = 10
 // Run executes all matching hooks for the given event context.
 // For tool_start events, returns an error if a blocking hook fails (cancels tool).
 // For other events, logs failures but returns nil.
-func (m *HookManager) Run(ctx context.Context, hctx *HookContext) error {
+// Context hooks (Type == "context") capture stdout and return it as ContextEntry slices.
+func (m *HookManager) Run(ctx context.Context, hctx *HookContext) ([]ContextEntry, error) {
 	env := append(os.Environ(), buildEnv(hctx)...)
+	var contexts []ContextEntry
 	for _, plugin := range m.plugins {
 		hooks, ok := plugin.Hooks[hctx.Event]
 		if !ok {
@@ -116,15 +126,29 @@ func (m *HookManager) Run(ctx context.Context, hctx *HookContext) error {
 			if !matchesRule(hook.Match, hctx.ToolName) {
 				continue
 			}
-			blocking := hook.Blocking == nil || *hook.Blocking
 			timeout := hook.Timeout
 			if timeout <= 0 {
 				timeout = defaultTimeout
 			}
+
+			if hook.Type == "context" {
+				output, err := runBlockingCapture(ctx, hook.Command, env, hctx.WorkDir, timeout)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "context hook warning [%s]: %v\n", plugin.Name, err)
+					continue
+				}
+				content := strings.TrimSpace(output)
+				if content != "" {
+					contexts = append(contexts, ContextEntry{Plugin: plugin.Name, Content: content})
+				}
+				continue
+			}
+
+			blocking := hook.Blocking == nil || *hook.Blocking
 			if blocking {
 				if err := runBlocking(ctx, hook.Command, env, hctx.WorkDir, timeout); err != nil {
 					if hctx.Event == "tool_start" {
-						return fmt.Errorf("hook [%s] blocked tool: %w", plugin.Name, err)
+						return contexts, fmt.Errorf("hook [%s] blocked tool: %w", plugin.Name, err)
 					}
 					fmt.Fprintf(os.Stderr, "hook warning [%s]: %v\n", plugin.Name, err)
 				}
@@ -133,7 +157,7 @@ func (m *HookManager) Run(ctx context.Context, hctx *HookContext) error {
 			}
 		}
 	}
-	return nil
+	return contexts, nil
 }
 
 func runBlocking(ctx context.Context, command string, env []string, dir string, timeoutSec int) error {
@@ -152,6 +176,22 @@ func runBlocking(ctx context.Context, command string, env []string, dir string, 
 		return err
 	}
 	return nil
+}
+
+func runBlockingCapture(ctx context.Context, command string, env []string, dir string, timeoutSec int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Env = env
+	cmd.Dir = dir
+	cmd.WaitDelay = 500 * time.Millisecond
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
 }
 
 // GetPlugins returns the list of active plugins.

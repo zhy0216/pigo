@@ -211,7 +211,13 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	}
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentStart})
-	a.hookMgr.Run(ctx, a.newHookContext("agent_start"))
+	contexts, _ := a.hookMgr.Run(ctx, a.newHookContext("agent_start"))
+	for _, c := range contexts {
+		a.messages = append(a.messages, types.Message{
+			Role:    "system",
+			Content: fmt.Sprintf("[plugin:%s]\n%s", c.Plugin, c.Content),
+		})
+	}
 
 	maxIterations := types.MaxAgentIterations
 	completed := false
@@ -220,13 +226,25 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		a.events.Emit(types.AgentEvent{Type: types.EventTurnStart})
 		hctxTurn := a.newHookContext("turn_start")
 		hctxTurn.TurnNumber = iterations + 1
-		a.hookMgr.Run(ctx, hctxTurn)
+		turnContexts, _ := a.hookMgr.Run(ctx, hctxTurn)
+
+		callMessages := a.messages
+		if len(turnContexts) > 0 {
+			callMessages = make([]types.Message, len(a.messages))
+			copy(callMessages, a.messages)
+			for _, c := range turnContexts {
+				callMessages = append(callMessages, types.Message{
+					Role:    "system",
+					Content: fmt.Sprintf("[plugin:%s]\n%s", c.Plugin, c.Content),
+				})
+			}
+		}
 
 		var response *types.ChatResponse
 		var chatErr error
 		var savedMessages []types.Message
 		for retries := 0; retries <= types.MaxOverflowRetries; retries++ {
-			response, chatErr = a.client.ChatStream(ctx, a.messages, a.registry.GetDefinitions(), a.output)
+			response, chatErr = a.client.ChatStream(ctx, callMessages, a.registry.GetDefinitions(), a.output)
 			if chatErr == nil {
 				break
 			}
@@ -249,7 +267,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 			a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd, Error: agentErr})
 			hctxTurnEnd := a.newHookContext("turn_end")
 			hctxTurnEnd.TurnNumber = iterations + 1
-			a.hookMgr.Run(ctx, hctxTurnEnd)
+			_, _ = a.hookMgr.Run(ctx, hctxTurnEnd)
 			break
 		}
 
@@ -287,7 +305,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				if input, ok := extractToolInput(tc.Function.Name, tc.Function.Arguments); ok {
 					toolStartCtx.ToolInput = input
 				}
-				if hookErr := a.hookMgr.Run(ctx, toolStartCtx); hookErr != nil {
+				if _, hookErr := a.hookMgr.Run(ctx, toolStartCtx); hookErr != nil {
 					result := types.ErrorResult(fmt.Sprintf("blocked by hook: %v", hookErr))
 					blockedMsg := types.Message{
 						Role:       "tool",
@@ -349,13 +367,13 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 				}
 				toolEndCtx.ToolOutput = toolOutput
 				toolEndCtx.ToolError = result.IsError
-				a.hookMgr.Run(ctx, toolEndCtx)
+				_, _ = a.hookMgr.Run(ctx, toolEndCtx)
 			}
 
 			a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
 			hctxTurnEnd := a.newHookContext("turn_end")
 			hctxTurnEnd.TurnNumber = iterations + 1
-			a.hookMgr.Run(ctx, hctxTurnEnd)
+			_, _ = a.hookMgr.Run(ctx, hctxTurnEnd)
 			continue
 		}
 
@@ -369,7 +387,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
 		hctxTurnEnd := a.newHookContext("turn_end")
 		hctxTurnEnd.TurnNumber = iterations + 1
-		a.hookMgr.Run(ctx, hctxTurnEnd)
+		_, _ = a.hookMgr.Run(ctx, hctxTurnEnd)
 		completed = true
 		break
 	}
@@ -379,7 +397,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	}
 
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentEnd, Error: agentErr})
-	a.hookMgr.Run(ctx, a.newHookContext("agent_end"))
+	_, _ = a.hookMgr.Run(ctx, a.newHookContext("agent_end"))
 	return agentErr
 }
 

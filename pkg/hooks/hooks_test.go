@@ -141,7 +141,7 @@ func TestRun_blockingSuccess(t *testing.T) {
 	}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestRun_blockingFailure_toolStart_cancels(t *testing.T) {
 	}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
-	if err := mgr.Run(context.Background(), hctx); err == nil {
+	if _, err := mgr.Run(context.Background(), hctx); err == nil {
 		t.Fatal("expected error for blocked tool_start, got nil")
 	}
 }
@@ -167,7 +167,7 @@ func TestRun_blockingFailure_nonToolStart_continues(t *testing.T) {
 	}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "agent_end", WorkDir: os.TempDir(), Model: "test"}
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Errorf("non-tool_start failure should not return error, got: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestRun_matchFiltering(t *testing.T) {
 	}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Errorf("hook should be skipped for non-matching tool, got: %v", err)
 	}
 }
@@ -189,7 +189,7 @@ func TestRun_noHooksForEvent(t *testing.T) {
 	plugins := []PluginConfig{{Name: "empty", Hooks: map[string][]HookConfig{}}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -204,7 +204,7 @@ func TestRun_envVarsAvailable(t *testing.T) {
 	}}
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "read", ToolArgs: `{"path":"/tmp/foo"}`}
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile(tmpFile)
@@ -226,7 +226,7 @@ func TestRun_timeout(t *testing.T) {
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "tool_start", WorkDir: os.TempDir(), Model: "test", ToolName: "bash"}
 	start := time.Now()
-	err := mgr.Run(context.Background(), hctx)
+	_, err := mgr.Run(context.Background(), hctx)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
@@ -263,7 +263,7 @@ func TestRun_multiplePlugins_ordering(t *testing.T) {
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
 
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -293,7 +293,7 @@ func TestRun_nonBlocking(t *testing.T) {
 	mgr := NewHookManager(plugins)
 	hctx := &HookContext{Event: "agent_end", WorkDir: os.TempDir(), Model: "test"}
 
-	if err := mgr.Run(context.Background(), hctx); err != nil {
+	if _, err := mgr.Run(context.Background(), hctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -306,5 +306,123 @@ func TestRun_nonBlocking(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "done" {
 		t.Errorf("async output = %q, want %q", string(data), "done")
+	}
+}
+
+func TestRun_contextHook_capturesStdout(t *testing.T) {
+	plugins := []PluginConfig{{
+		Name: "git-context",
+		Hooks: map[string][]HookConfig{
+			"agent_start": {{Command: "echo 'Branch: main'", Type: "context"}},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	contexts, err := mgr.Run(context.Background(), hctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(contexts) != 1 {
+		t.Fatalf("expected 1 context entry, got %d", len(contexts))
+	}
+	if contexts[0].Plugin != "git-context" {
+		t.Errorf("plugin = %q, want %q", contexts[0].Plugin, "git-context")
+	}
+	if contexts[0].Content != "Branch: main" {
+		t.Errorf("content = %q, want %q", contexts[0].Content, "Branch: main")
+	}
+}
+
+func TestRun_contextHook_emptyStdout_skipped(t *testing.T) {
+	plugins := []PluginConfig{{
+		Name: "empty-ctx",
+		Hooks: map[string][]HookConfig{
+			"agent_start": {{Command: "true", Type: "context"}},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	contexts, err := mgr.Run(context.Background(), hctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(contexts) != 0 {
+		t.Errorf("expected 0 context entries for empty stdout, got %d", len(contexts))
+	}
+}
+
+func TestRun_contextHook_failure_skipped(t *testing.T) {
+	plugins := []PluginConfig{{
+		Name: "fail-ctx",
+		Hooks: map[string][]HookConfig{
+			"agent_start": {{Command: "exit 1", Type: "context"}},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	contexts, err := mgr.Run(context.Background(), hctx)
+	if err != nil {
+		t.Fatalf("expected no error for failed context hook, got: %v", err)
+	}
+	if len(contexts) != 0 {
+		t.Errorf("expected 0 context entries for failed hook, got %d", len(contexts))
+	}
+}
+
+func TestRun_contextHook_mixedWithRegular(t *testing.T) {
+	blocking := true
+	outFile := filepath.Join(t.TempDir(), "mixed.txt")
+	plugins := []PluginConfig{{
+		Name: "mixed",
+		Hooks: map[string][]HookConfig{
+			"agent_start": {
+				{Command: fmt.Sprintf("echo regular >> %s", outFile), Blocking: &blocking},
+				{Command: "echo 'context output'", Type: "context"},
+			},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	contexts, err := mgr.Run(context.Background(), hctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Regular hook should have written to file
+	data, readErr := os.ReadFile(outFile)
+	if readErr != nil {
+		t.Fatalf("regular hook didn't write output: %v", readErr)
+	}
+	if strings.TrimSpace(string(data)) != "regular" {
+		t.Errorf("regular hook output = %q, want %q", strings.TrimSpace(string(data)), "regular")
+	}
+	// Context hook should have returned entry
+	if len(contexts) != 1 {
+		t.Fatalf("expected 1 context entry, got %d", len(contexts))
+	}
+	if contexts[0].Content != "context output" {
+		t.Errorf("context content = %q, want %q", contexts[0].Content, "context output")
+	}
+}
+
+func TestRun_contextHook_timeout(t *testing.T) {
+	plugins := []PluginConfig{{
+		Name: "slow-ctx",
+		Hooks: map[string][]HookConfig{
+			"agent_start": {{Command: "sleep 30", Type: "context", Timeout: 1}},
+		},
+	}}
+	mgr := NewHookManager(plugins)
+	hctx := &HookContext{Event: "agent_start", WorkDir: os.TempDir(), Model: "test"}
+	start := time.Now()
+	contexts, err := mgr.Run(context.Background(), hctx)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("expected no error for timed out context hook, got: %v", err)
+	}
+	if len(contexts) != 0 {
+		t.Errorf("expected 0 context entries for timed out hook, got %d", len(contexts))
+	}
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout took too long: %v", elapsed)
 	}
 }
