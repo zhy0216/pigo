@@ -3,8 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/zhy0216/pigo/pkg/skills"
 	"github.com/zhy0216/pigo/pkg/types"
@@ -69,20 +67,12 @@ func (t *UseSkillTool) Execute(ctx context.Context, args map[string]interface{})
 		return types.ErrorResult(fmt.Sprintf("skill not found: %s", name))
 	}
 
-	content, err := os.ReadFile(skill.FilePath)
+	formatted, err := skills.LoadSkillContent(*skill)
 	if err != nil {
-		return types.ErrorResult(fmt.Sprintf("failed to read skill file: %v", err))
+		return types.ErrorResult(err.Error())
 	}
 
-	_, body := skills.ParseFrontmatter(string(content))
-	body = strings.TrimSpace(body)
-
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("<skill name=%q>\n", name))
-	b.WriteString(body)
-	b.WriteString("\n</skill>")
-
-	result := types.NewToolResult(b.String())
+	result := types.NewToolResult(formatted)
 	result.ForUser = fmt.Sprintf("[skill: %s]", name)
 	return result
 }
