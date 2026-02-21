@@ -74,7 +74,7 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 }
 
 // parseSkillNames extracts a JSON string array from LLM output.
-// Handles cases where the JSON is surrounded by extra text.
+// Handles cases where the JSON is surrounded by extra text or markdown fences.
 func parseSkillNames(content string) []string {
 	content = strings.TrimSpace(content)
 
@@ -82,6 +82,14 @@ func parseSkillNames(content string) []string {
 	var names []string
 	if err := json.Unmarshal([]byte(content), &names); err == nil {
 		return names
+	}
+
+	// Strip markdown code fences if present
+	if stripped := stripCodeFences(content); stripped != content {
+		if err := json.Unmarshal([]byte(stripped), &names); err == nil {
+			return names
+		}
+		content = stripped
 	}
 
 	// Try extracting JSON array from surrounding text
@@ -94,4 +102,20 @@ func parseSkillNames(content string) []string {
 	}
 
 	return nil
+}
+
+// stripCodeFences removes markdown code fences (```json ... ``` or ``` ... ```)
+// and returns the inner content trimmed.
+func stripCodeFences(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) < 2 {
+		return s
+	}
+	first := strings.TrimSpace(lines[0])
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if strings.HasPrefix(first, "```") && last == "```" {
+		inner := strings.Join(lines[1:len(lines)-1], "\n")
+		return strings.TrimSpace(inner)
+	}
+	return s
 }

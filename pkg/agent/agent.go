@@ -222,7 +222,7 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		result := skills.MatchSkills(ctx, a.client, input, a.visibleSkills)
 		if types.Debug {
 			if result.Err != nil {
-				fmt.Fprintf(a.output, "%s[skill match: error: %v]%s\n", types.ColorYellow, result.Err, types.ColorReset)
+				fmt.Fprintf(a.output, "%s[skill match: error: %v, raw: %q]%s\n", types.ColorYellow, result.Err, result.RawResponse, types.ColorReset)
 			} else {
 				fmt.Fprintf(a.output, "%s[skill match: %s]%s\n", types.ColorGray, result.RawResponse, types.ColorReset)
 			}

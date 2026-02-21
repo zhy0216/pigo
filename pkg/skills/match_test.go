@@ -99,6 +99,28 @@ func TestMatchSkills(t *testing.T) {
 		}
 	})
 
+	t.Run("JSON in markdown code fence", func(t *testing.T) {
+		client := &mockChatClient{response: "```json\n[\"brainstorming\"]\n```"}
+		result := MatchSkills(context.Background(), client, "add feature", skills)
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if len(result.Names) != 1 || result.Names[0] != "brainstorming" {
+			t.Errorf("expected [brainstorming] from fenced JSON, got %v", result.Names)
+		}
+	})
+
+	t.Run("JSON in bare code fence", func(t *testing.T) {
+		client := &mockChatClient{response: "```\n[\"debugging\"]\n```"}
+		result := MatchSkills(context.Background(), client, "fix a bug", skills)
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if len(result.Names) != 1 || result.Names[0] != "debugging" {
+			t.Errorf("expected [debugging] from bare fenced JSON, got %v", result.Names)
+		}
+	})
+
 	t.Run("filters unknown skill names", func(t *testing.T) {
 		client := &mockChatClient{response: `["brainstorming", "nonexistent"]`}
 		result := MatchSkills(context.Background(), client, "add feature", skills)
