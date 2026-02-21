@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/zhy0216/pigo/pkg/config"
 	"github.com/zhy0216/pigo/pkg/hooks"
@@ -335,92 +336,19 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 			a.messages = append(a.messages, assistantMsg)
 			turnMessages = append(turnMessages, assistantMsg)
 
-			for i, tc := range response.ToolCalls {
-				if ctx.Err() != nil {
-					for j := i; j < len(response.ToolCalls); j++ {
-						skipMsg := types.Message{
-							Role:       "tool",
-							Content:    "Skipped due to user interrupt",
-							ToolCallID: response.ToolCalls[j].ID,
-						}
-						a.messages = append(a.messages, skipMsg)
-						turnMessages = append(turnMessages, skipMsg)
-					}
-					break
-				}
-
-				a.events.Emit(types.AgentEvent{Type: types.EventToolStart, ToolName: tc.Function.Name})
-
-				// Run tool_start hooks — blocking hook failure cancels the tool
-				toolStartCtx := a.newHookContext("tool_start")
-				toolStartCtx.ToolName = tc.Function.Name
-				toolStartCtx.ToolArgs = tc.Function.Arguments
-				if input, ok := extractToolInput(tc.Function.Name, tc.Function.Arguments); ok {
-					toolStartCtx.ToolInput = input
-				}
-				if _, hookErr := a.hookMgr.Run(ctx, toolStartCtx); hookErr != nil {
-					result := types.ErrorResult(fmt.Sprintf("blocked by hook: %v", hookErr))
-					blockedMsg := types.Message{
+			// Execute tool calls in parallel when multiple are requested
+			if ctx.Err() != nil {
+				for _, tc := range response.ToolCalls {
+					skipMsg := types.Message{
 						Role:       "tool",
-						Content:    result.ForLLM,
+						Content:    "Skipped due to user interrupt",
 						ToolCallID: tc.ID,
 					}
-					a.messages = append(a.messages, blockedMsg)
-					turnMessages = append(turnMessages, blockedMsg)
-					a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name})
-					continue
+					a.messages = append(a.messages, skipMsg)
+					turnMessages = append(turnMessages, skipMsg)
 				}
-
-				var args map[string]interface{}
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-					result := types.ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
-					errMsg := types.Message{
-						Role:       "tool",
-						Content:    result.ForLLM,
-						ToolCallID: tc.ID,
-					}
-					a.messages = append(a.messages, errMsg)
-					turnMessages = append(turnMessages, errMsg)
-					a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name})
-					continue
-				}
-
-				result := a.registry.Execute(ctx, tc.Function.Name, args)
-
-				var output string
-				if !result.Silent && result.ForUser != "" {
-					lines := strings.Split(result.ForUser, "\n")
-					var buf strings.Builder
-					if len(lines) > 20 {
-						for _, line := range lines[:20] {
-							fmt.Fprintln(&buf, line)
-						}
-						fmt.Fprintf(&buf, "... (%d more lines)\n", len(lines)-20)
-					} else {
-						fmt.Fprintln(&buf, result.ForUser)
-					}
-					output = buf.String()
-				}
-
-				toolMsg := types.Message{
-					Role:       "tool",
-					Content:    result.ForLLM,
-					ToolCallID: tc.ID,
-				}
-				a.messages = append(a.messages, toolMsg)
-				turnMessages = append(turnMessages, toolMsg)
-				a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: tc.Function.Name, Content: output})
-
-				toolEndCtx := a.newHookContext("tool_end")
-				toolEndCtx.ToolName = tc.Function.Name
-				toolEndCtx.ToolArgs = tc.Function.Arguments
-				toolOutput := result.ForLLM
-				if len(toolOutput) > 10000 {
-					toolOutput = toolOutput[len(toolOutput)-10000:]
-				}
-				toolEndCtx.ToolOutput = toolOutput
-				toolEndCtx.ToolError = result.IsError
-				_, _ = a.hookMgr.Run(ctx, toolEndCtx)
+			} else {
+				a.executeToolCalls(ctx, response.ToolCalls, &turnMessages)
 			}
 
 			a.events.Emit(types.AgentEvent{Type: types.EventTurnEnd})
@@ -452,6 +380,119 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 	a.events.Emit(types.AgentEvent{Type: types.EventAgentEnd, Error: agentErr})
 	_, _ = a.hookMgr.Run(ctx, a.newHookContext("agent_end"))
 	return agentErr
+}
+
+// toolCallResult holds the result of a single tool execution for ordered collection.
+type toolCallResult struct {
+	msg    types.Message
+	output string // truncated user-facing output
+	tc     types.ToolCall
+	result *types.ToolResult
+}
+
+// executeToolCalls runs tool calls in parallel and appends results in order.
+func (a *Agent) executeToolCalls(ctx context.Context, toolCalls []types.ToolCall, turnMessages *[]types.Message) {
+	// Emit all tool start events upfront
+	for _, tc := range toolCalls {
+		a.events.Emit(types.AgentEvent{Type: types.EventToolStart, ToolName: tc.Function.Name})
+	}
+
+	results := make([]toolCallResult, len(toolCalls))
+	var wg sync.WaitGroup
+
+	for i, tc := range toolCalls {
+		wg.Add(1)
+		go func(idx int, tc types.ToolCall) {
+			defer wg.Done()
+
+			// Run tool_start hooks — blocking hook failure cancels the tool
+			toolStartCtx := a.newHookContext("tool_start")
+			toolStartCtx.ToolName = tc.Function.Name
+			toolStartCtx.ToolArgs = tc.Function.Arguments
+			if input, ok := extractToolInput(tc.Function.Name, tc.Function.Arguments); ok {
+				toolStartCtx.ToolInput = input
+			}
+			if _, hookErr := a.hookMgr.Run(ctx, toolStartCtx); hookErr != nil {
+				r := types.ErrorResult(fmt.Sprintf("blocked by hook: %v", hookErr))
+				results[idx] = toolCallResult{
+					msg: types.Message{
+						Role:       "tool",
+						Content:    r.ForLLM,
+						ToolCallID: tc.ID,
+					},
+					tc:     tc,
+					result: r,
+				}
+				return
+			}
+
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				r := types.ErrorResult(fmt.Sprintf("failed to parse arguments: %v", err))
+				results[idx] = toolCallResult{
+					msg: types.Message{
+						Role:       "tool",
+						Content:    r.ForLLM,
+						ToolCallID: tc.ID,
+					},
+					tc:     tc,
+					result: r,
+				}
+				return
+			}
+
+			r := a.registry.Execute(ctx, tc.Function.Name, args)
+
+			var output string
+			if !r.Silent && r.ForUser != "" {
+				lines := strings.Split(r.ForUser, "\n")
+				var buf strings.Builder
+				if len(lines) > 20 {
+					for _, line := range lines[:20] {
+						fmt.Fprintln(&buf, line)
+					}
+					fmt.Fprintf(&buf, "... (%d more lines)\n", len(lines)-20)
+				} else {
+					fmt.Fprintln(&buf, r.ForUser)
+				}
+				output = buf.String()
+			}
+
+			results[idx] = toolCallResult{
+				msg: types.Message{
+					Role:       "tool",
+					Content:    r.ForLLM,
+					ToolCallID: tc.ID,
+				},
+				output: output,
+				tc:     tc,
+				result: r,
+			}
+		}(i, tc)
+	}
+
+	wg.Wait()
+
+	// Append results in order and emit events
+	for _, r := range results {
+		a.messages = append(a.messages, r.msg)
+		*turnMessages = append(*turnMessages, r.msg)
+		a.events.Emit(types.AgentEvent{Type: types.EventToolEnd, ToolName: r.tc.Function.Name, Content: r.output})
+
+		// Run tool_end hooks
+		toolEndCtx := a.newHookContext("tool_end")
+		toolEndCtx.ToolName = r.tc.Function.Name
+		toolEndCtx.ToolArgs = r.tc.Function.Arguments
+		toolOutput := r.msg.Content
+		if len(toolOutput) > 10000 {
+			toolOutput = toolOutput[len(toolOutput)-10000:]
+		}
+		toolEndCtx.ToolOutput = toolOutput
+		if r.result != nil {
+			toolEndCtx.ToolError = r.result.IsError
+		}
+		_, _ = a.hookMgr.Run(ctx, toolEndCtx)
+	}
 }
 
 // defaultOutputHandler is the default event subscriber that handles console output.

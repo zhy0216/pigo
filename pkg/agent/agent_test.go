@@ -414,7 +414,7 @@ func (s *slowTool) Execute(ctx context.Context, args map[string]interface{}) *ty
 	return types.NewToolResult(fmt.Sprintf("done-%s", s.name))
 }
 
-func TestSequentialToolExecution(t *testing.T) {
+func TestParallelToolExecution(t *testing.T) {
 	var running atomic.Int32
 	var maxConc atomic.Int32
 
@@ -470,10 +470,11 @@ func TestSequentialToolExecution(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if maxConc.Load() > 1 {
-		t.Errorf("expected sequential execution (peak concurrency == 1), got %d", maxConc.Load())
+	if maxConc.Load() < 2 {
+		t.Errorf("expected parallel execution (peak concurrency >= 2), got %d", maxConc.Load())
 	}
 
+	// Verify results are still ordered correctly despite parallel execution
 	var toolMsgs []types.Message
 	for _, m := range agent.messages {
 		if m.Role == "tool" {
@@ -485,6 +486,12 @@ func TestSequentialToolExecution(t *testing.T) {
 	}
 	if toolMsgs[0].ToolCallID != "call_sa" {
 		t.Errorf("expected first result for call_sa, got %s", toolMsgs[0].ToolCallID)
+	}
+	if toolMsgs[1].ToolCallID != "call_sb" {
+		t.Errorf("expected second result for call_sb, got %s", toolMsgs[1].ToolCallID)
+	}
+	if toolMsgs[2].ToolCallID != "call_sc" {
+		t.Errorf("expected third result for call_sc, got %s", toolMsgs[2].ToolCallID)
 	}
 }
 
