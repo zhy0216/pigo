@@ -71,7 +71,7 @@ func TestBuildEnv_common(t *testing.T) {
 	hctx := &HookContext{
 		Event: "agent_start", WorkDir: "/tmp/test", Model: "gpt-4o",
 		SystemPrompt: "You are a helpful assistant.",
-		UserMessage: "hello", AssistantMessage: "hi there",
+		UserMessage:  "hello", AssistantMessage: "hi there",
 	}
 	env := buildEnv(hctx)
 	m := envToMap(env)
