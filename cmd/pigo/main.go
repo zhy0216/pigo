@@ -43,6 +43,12 @@ func main() {
 	}
 	fmt.Println()
 
+	gracefulExit := func() {
+		fmt.Println()
+		app.HandleCommand("/q")
+		os.Exit(0)
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -55,20 +61,21 @@ func main() {
 			mu.Lock()
 			if sig == syscall.SIGTERM {
 				mu.Unlock()
-				fmt.Println("\nGoodbye!")
-				os.Exit(0)
+				gracefulExit()
 			}
 			now := time.Now()
 			if now.Sub(lastSigTime) < time.Second {
 				mu.Unlock()
-				fmt.Println("\nGoodbye!")
-				os.Exit(0)
+				gracefulExit()
 			}
 			lastSigTime = now
 			if turnCancel != nil {
 				turnCancel()
 				turnCancel = nil
 				fmt.Fprintf(os.Stderr, "\n%s[interrupted]%s\n", types.ColorYellow, types.ColorReset)
+			} else {
+				mu.Unlock()
+				gracefulExit()
 			}
 			mu.Unlock()
 		}
