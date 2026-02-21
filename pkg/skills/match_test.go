@@ -14,7 +14,7 @@ type mockChatClient struct {
 	err      error
 }
 
-func (m *mockChatClient) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}) (*types.ChatResponse, error) {
+func (m *mockChatClient) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

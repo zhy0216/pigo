@@ -12,7 +12,7 @@ import (
 // ChatClient is the minimal interface needed for skill matching.
 // Satisfied by *llm.Client.
 type ChatClient interface {
-	Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}) (*types.ChatResponse, error)
+	Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error)
 }
 
 const skillMatchSystemPrompt = `You are a skill matcher. Given a user message and a list of available skills, determine which skills should be loaded.
@@ -52,7 +52,7 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 		{Role: "user", Content: b.String()},
 	}
 
-	resp, err := client.Chat(ctx, messages, nil)
+	resp, err := client.Chat(ctx, messages, nil, types.WithJSONMode())
 	if err != nil {
 		return &MatchResult{Err: fmt.Errorf("LLM call failed: %w", err)}
 	}

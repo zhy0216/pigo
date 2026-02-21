@@ -41,11 +41,12 @@ func NewClient(apiKey, baseURL, model, apiType string) *Client {
 }
 
 // Chat sends a chat request, dispatching to the appropriate API based on apiType.
-func (c *Client) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}) (*types.ChatResponse, error) {
+func (c *Client) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error) {
+	cfg := types.ApplyChatOptions(opts)
 	if c.apiType == "responses" {
-		return c.chatViaResponses(ctx, messages, toolDefs)
+		return c.chatViaResponses(ctx, messages, toolDefs, cfg)
 	}
-	return c.chatViaCompletions(ctx, messages, toolDefs)
+	return c.chatViaCompletions(ctx, messages, toolDefs, cfg)
 }
 
 // ChatStream sends a streaming chat request. Text deltas are written to w as they
@@ -58,7 +59,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []types.Message, toolD
 }
 
 // chatViaCompletions sends a chat completion request using the Chat Completions API.
-func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}) (*types.ChatResponse, error) {
+func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
 		switch msg.Role {
@@ -120,6 +121,11 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Messag
 	if len(tools) > 0 {
 		params.Tools = tools
 	}
+	if cfg.JSONMode {
+		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+		}
+	}
 
 	completion, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
@@ -159,7 +165,7 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Messag
 }
 
 // chatViaResponses sends a chat request using the Responses API.
-func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}) (*types.ChatResponse, error) {
+func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
 	var instructions string
 	var inputMessages []types.Message
 	for _, msg := range messages {
@@ -244,6 +250,13 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message,
 	}
 	if len(rtools) > 0 {
 		reqParams.Tools = rtools
+	}
+	if cfg.JSONMode {
+		reqParams.Text = responses.ResponseTextConfigParam{
+			Format: responses.ResponseFormatTextConfigUnionParam{
+				OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+			},
+		}
 	}
 
 	resp, err := c.client.Responses.New(ctx, reqParams)

@@ -32,3 +32,25 @@ type TokenUsage struct {
 	CompletionTokens int64
 	TotalTokens      int64
 }
+
+// ChatOption configures optional behavior for a Chat call.
+type ChatOption func(*ChatConfig)
+
+// ChatConfig holds optional settings for a Chat call.
+type ChatConfig struct {
+	JSONMode bool // Request JSON object response format
+}
+
+// ApplyChatOptions merges variadic options into a ChatConfig.
+func ApplyChatOptions(opts []ChatOption) ChatConfig {
+	var cfg ChatConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return cfg
+}
+
+// WithJSONMode requests JSON object response format from the API.
+func WithJSONMode() ChatOption {
+	return func(c *ChatConfig) { c.JSONMode = true }
+}
