@@ -300,6 +300,7 @@ func TestAgentProcessInput(t *testing.T) {
 		agent := NewAgent(cfg)
 		output := &bytes.Buffer{}
 		agent.output = output
+		agent.visibleSkills = nil
 
 		err := agent.ProcessInput(context.Background(), "Hello")
 		if err != nil {
@@ -574,6 +575,7 @@ func TestProcessInputContextOverflowRetry(t *testing.T) {
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output
+	agent.visibleSkills = nil
 
 	for i := 0; i < 15; i++ {
 		agent.messages = append(agent.messages, types.Message{
@@ -617,6 +619,7 @@ func TestProcessInputContextOverflowMaxRetries(t *testing.T) {
 	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
+	agent.visibleSkills = nil
 
 	err := agent.ProcessInput(context.Background(), "test max retries")
 	if err == nil {
@@ -655,6 +658,7 @@ func TestUsageTracking(t *testing.T) {
 	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
+	agent.visibleSkills = nil
 
 	agent.ProcessInput(context.Background(), "hi")
 	agent.ProcessInput(context.Background(), "hello again")
@@ -745,15 +749,15 @@ func TestHandleCommandEvents(t *testing.T) {
 }
 
 func TestProcessInputPreflightSkillMatching(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(body))
 
-		callCount++
+		callCount.Add(1)
 
 		// First call is the pre-flight skill matching (non-streaming)
-		if callCount == 1 {
+		if callCount.Load() == 1 {
 			if bytes.Contains(body, []byte(`"stream":true`)) || bytes.Contains(body, []byte(`"stream": true`)) {
 				t.Error("expected non-streaming request for skill matching")
 			}
@@ -816,7 +820,7 @@ func TestProcessInputPreflightSkillMatching(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if callCount < 2 {
-		t.Errorf("expected at least 2 API calls (match + main), got %d", callCount)
+	if callCount.Load() < 2 {
+		t.Errorf("expected at least 2 API calls (match + main), got %d", callCount.Load())
 	}
 }
