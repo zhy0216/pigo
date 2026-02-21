@@ -493,17 +493,6 @@ func (a *Agent) executeToolCalls(ctx context.Context, toolCalls []types.ToolCall
 		}
 		_, _ = a.hookMgr.Run(ctx, toolEndCtx)
 	}
-
-	// Auto-heal: run build checks after file-modifying tools
-	if healMsg := a.autoHeal(ctx, toolCalls, results); healMsg != "" {
-		fmt.Fprintf(a.output, "%s%s%s\n", types.ColorYellow, healMsg, types.ColorReset)
-		healMessage := types.Message{
-			Role:    "user",
-			Content: healMsg + "\n\nPlease fix the errors above.",
-		}
-		a.messages = append(a.messages, healMessage)
-		*turnMessages = append(*turnMessages, healMessage)
-	}
 }
 
 // defaultOutputHandler is the default event subscriber that handles console output.
