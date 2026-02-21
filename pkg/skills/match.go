@@ -15,14 +15,20 @@ type ChatClient interface {
 	Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error)
 }
 
-const skillMatchSystemPrompt = `You are a skill matcher. Given a user message and a list of available skills, determine which skills should be loaded.
+const skillMatchSystemPrompt = `You classify user messages against a skill list. Do NOT respond to the user. Do NOT explain anything. Output ONLY a json object.
 
-Rules:
-- Return a JSON array of skill names that apply to the user's task
-- Return [] if no skills apply
-- A skill applies if the user's task matches the skill's description
-- When in doubt, include the skill (false positives are acceptable)
-- Return ONLY the JSON array, no other text`
+Output format: {"skills": ["name1", "name2"]}
+If no skills match: {"skills": []}
+
+Example:
+User message: "fix the login bug"
+Skills: "brainstorming" (creative work), "debugging" (encountering bugs)
+Output: {"skills": ["debugging"]}
+
+Example:
+User message: "hello"
+Skills: "brainstorming" (creative work), "debugging" (encountering bugs)
+Output: {"skills": []}`
 
 // MatchResult holds the outcome of a pre-flight skill matching call,
 // including debug information about the LLM response.
@@ -46,13 +52,26 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 		b.WriteString(fmt.Sprintf("- name: %q, description: %q\n", s.Name, s.Description))
 		validNames[s.Name] = true
 	}
+	b.WriteString("\nRespond with a json object.")
 
 	messages := []types.Message{
 		{Role: "system", Content: skillMatchSystemPrompt},
 		{Role: "user", Content: b.String()},
 	}
 
-	resp, err := client.Chat(ctx, messages, nil, types.WithJSONMode())
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"skills": map[string]interface{}{
+				"type":  "array",
+				"items": map[string]interface{}{"type": "string"},
+			},
+		},
+		"required":             []string{"skills"},
+		"additionalProperties": false,
+	}
+
+	resp, err := client.Chat(ctx, messages, nil, types.WithJSONSchema("skill_match", schema))
 	if err != nil {
 		return &MatchResult{Err: fmt.Errorf("LLM call failed: %w", err)}
 	}
@@ -73,23 +92,36 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 	return &MatchResult{Names: result, RawResponse: raw}
 }
 
-// parseSkillNames extracts a JSON string array from LLM output.
-// Handles cases where the JSON is surrounded by extra text or markdown fences.
+// parseSkillNames extracts skill names from LLM output.
+// Accepts {"skills": [...]} objects, plain JSON arrays, markdown fences, or
+// arrays embedded in surrounding text.
 func parseSkillNames(content string) []string {
 	content = strings.TrimSpace(content)
 
-	// Try direct parse first
+	// Strip markdown code fences if present
+	if stripped := stripCodeFences(content); stripped != content {
+		content = stripped
+	}
+
+	// Try parsing as JSON object — look for {"skills": [...]}
+	// If it's a valid JSON object without a "skills" key, the model
+	// didn't follow the format but we treat it as no matches.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &obj); err == nil {
+		if raw, ok := obj["skills"]; ok {
+			var names []string
+			if err := json.Unmarshal(raw, &names); err == nil {
+				return names
+			}
+		}
+		// Valid JSON object but no "skills" key — no matches
+		return []string{}
+	}
+
+	// Try direct array parse
 	var names []string
 	if err := json.Unmarshal([]byte(content), &names); err == nil {
 		return names
-	}
-
-	// Strip markdown code fences if present
-	if stripped := stripCodeFences(content); stripped != content {
-		if err := json.Unmarshal([]byte(stripped), &names); err == nil {
-			return names
-		}
-		content = stripped
 	}
 
 	// Try extracting JSON array from surrounding text

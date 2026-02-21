@@ -121,6 +121,39 @@ func TestMatchSkills(t *testing.T) {
 		}
 	})
 
+	t.Run("matches single skill via object format", func(t *testing.T) {
+		client := &mockChatClient{response: `{"skills": ["brainstorming"]}`}
+		result := MatchSkills(context.Background(), client, "add a new feature", skills)
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if len(result.Names) != 1 || result.Names[0] != "brainstorming" {
+			t.Errorf("expected [brainstorming], got %v", result.Names)
+		}
+	})
+
+	t.Run("no matches via object format", func(t *testing.T) {
+		client := &mockChatClient{response: `{"skills": []}`}
+		result := MatchSkills(context.Background(), client, "hello", skills)
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if len(result.Names) != 0 {
+			t.Errorf("expected empty, got %v", result.Names)
+		}
+	})
+
+	t.Run("JSON object without skills key treated as no matches", func(t *testing.T) {
+		client := &mockChatClient{response: `{"response": "I would suggest brainstorming"}`}
+		result := MatchSkills(context.Background(), client, "add feature", skills)
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if len(result.Names) != 0 {
+			t.Errorf("expected empty, got %v", result.Names)
+		}
+	})
+
 	t.Run("filters unknown skill names", func(t *testing.T) {
 		client := &mockChatClient{response: `["brainstorming", "nonexistent"]`}
 		result := MatchSkills(context.Background(), client, "add feature", skills)

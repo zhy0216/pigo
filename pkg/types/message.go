@@ -38,7 +38,14 @@ type ChatOption func(*ChatConfig)
 
 // ChatConfig holds optional settings for a Chat call.
 type ChatConfig struct {
-	JSONMode bool // Request JSON object response format
+	JSONMode   bool // Request JSON object response format
+	JSONSchema *JSONSchemaConfig // Request JSON schema response format (takes precedence over JSONMode)
+}
+
+// JSONSchemaConfig defines a strict JSON schema for the response.
+type JSONSchemaConfig struct {
+	Name   string
+	Schema map[string]interface{}
 }
 
 // ApplyChatOptions merges variadic options into a ChatConfig.
@@ -53,4 +60,11 @@ func ApplyChatOptions(opts []ChatOption) ChatConfig {
 // WithJSONMode requests JSON object response format from the API.
 func WithJSONMode() ChatOption {
 	return func(c *ChatConfig) { c.JSONMode = true }
+}
+
+// WithJSONSchema requests a strict JSON schema response format from the API.
+func WithJSONSchema(name string, schema map[string]interface{}) ChatOption {
+	return func(c *ChatConfig) {
+		c.JSONSchema = &JSONSchemaConfig{Name: name, Schema: schema}
+	}
 }

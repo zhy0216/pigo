@@ -10,6 +10,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 
@@ -121,7 +122,17 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Messag
 	if len(tools) > 0 {
 		params.Tools = tools
 	}
-	if cfg.JSONMode {
+	if cfg.JSONSchema != nil {
+		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   cfg.JSONSchema.Name,
+					Schema: cfg.JSONSchema.Schema,
+					Strict: param.NewOpt(true),
+				},
+			},
+		}
+	} else if cfg.JSONMode {
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
 		}
@@ -251,7 +262,17 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message,
 	if len(rtools) > 0 {
 		reqParams.Tools = rtools
 	}
-	if cfg.JSONMode {
+	if cfg.JSONSchema != nil {
+		reqParams.Text = responses.ResponseTextConfigParam{
+			Format: responses.ResponseFormatTextConfigUnionParam{
+				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
+					Name:   cfg.JSONSchema.Name,
+					Schema: cfg.JSONSchema.Schema,
+					Strict: param.NewOpt(true),
+				},
+			},
+		}
+	} else if cfg.JSONMode {
 		reqParams.Text = responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
 				OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
