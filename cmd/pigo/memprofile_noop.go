@@ -1,4 +1,4 @@
-//go:build !memprofile
+//go:build !debug
 
 package main
 

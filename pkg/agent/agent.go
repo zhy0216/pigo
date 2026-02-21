@@ -219,8 +219,15 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 
 	// Pre-flight skill matching
 	if len(a.visibleSkills) > 0 {
-		matched := skills.MatchSkills(ctx, a.client, input, a.visibleSkills)
-		for _, name := range matched {
+		result := skills.MatchSkills(ctx, a.client, input, a.visibleSkills)
+		if types.Debug {
+			if result.Err != nil {
+				fmt.Fprintf(a.output, "%s[skill match: error: %v]%s\n", types.ColorYellow, result.Err, types.ColorReset)
+			} else {
+				fmt.Fprintf(a.output, "%s[skill match: %s]%s\n", types.ColorGray, result.RawResponse, types.ColorReset)
+			}
+		}
+		for _, name := range result.Names {
 			for _, s := range a.visibleSkills {
 				if s.Name == name {
 					content, err := skills.LoadSkillContent(s)

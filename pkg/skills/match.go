@@ -24,11 +24,19 @@ Rules:
 - When in doubt, include the skill (false positives are acceptable)
 - Return ONLY the JSON array, no other text`
 
+// MatchResult holds the outcome of a pre-flight skill matching call,
+// including debug information about the LLM response.
+type MatchResult struct {
+	Names       []string // matched skill names (filtered to valid)
+	RawResponse string   // raw LLM response text (empty if call failed)
+	Err         error    // error from LLM call or JSON parsing, nil on success
+}
+
 // MatchSkills calls the LLM to determine which skills apply to user input.
-// Returns matched skill names, or nil on error (silent fallback).
-func MatchSkills(ctx context.Context, client ChatClient, userInput string, skills []Skill) []string {
+// Always returns a non-nil MatchResult with debug information.
+func MatchSkills(ctx context.Context, client ChatClient, userInput string, skills []Skill) *MatchResult {
 	if len(skills) == 0 {
-		return nil
+		return &MatchResult{}
 	}
 
 	var b strings.Builder
@@ -46,12 +54,13 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 
 	resp, err := client.Chat(ctx, messages, nil)
 	if err != nil {
-		return nil
+		return &MatchResult{Err: fmt.Errorf("LLM call failed: %w", err)}
 	}
 
-	matched := parseSkillNames(resp.Content)
+	raw := resp.Content
+	matched := parseSkillNames(raw)
 	if matched == nil {
-		return nil
+		return &MatchResult{RawResponse: raw, Err: fmt.Errorf("failed to parse response as JSON array")}
 	}
 
 	// Filter to only valid skill names
@@ -61,7 +70,7 @@ func MatchSkills(ctx context.Context, client ChatClient, userInput string, skill
 			result = append(result, name)
 		}
 	}
-	return result
+	return &MatchResult{Names: result, RawResponse: raw}
 }
 
 // parseSkillNames extracts a JSON string array from LLM output.

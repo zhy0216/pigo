@@ -3,21 +3,21 @@ MODULE  = $(shell go list -m)
 VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -s -w -X main.Version=$(VERSION)
 
-.PHONY: build build-dev run clean test test-race test-cover lint fmt vet prof-mem help
+.PHONY: build debug run clean test test-race test-cover lint fmt vet prof-mem help
 
 ## Build & Run
 
-build: ## Build the binary (production, no memprofile)
+build: ## Build the binary (production)
 	go build -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/pigo
 
-build-dev: ## Build with memprofile support
-	go build -tags memprofile -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/pigo
+debug: ## Build debug binary (memprofile + debug logging)
+	go build -tags debug -ldflags '-X main.Version=$(VERSION)' -o $(BINARY)-debug ./cmd/pigo
 
 run: ## Run from source
 	go run ./cmd/pigo
 
 clean: ## Remove build artifacts and profiles
-	rm -f $(BINARY) *.prof coverage.out
+	rm -f $(BINARY) $(BINARY)-debug *.prof coverage.out
 
 ## Testing
 
@@ -45,8 +45,8 @@ vet: ## Run go vet
 
 ## Profiling
 
-prof-mem: build-dev ## Run with memory profiling, then open the profile
-	PIGO_MEMPROFILE=mem.prof ./$(BINARY)
+prof-mem: debug ## Run with memory profiling, then open the profile
+	PIGO_MEMPROFILE=mem.prof ./$(BINARY)-debug
 	go tool pprof -http=:8080 mem.prof
 
 ## Help
