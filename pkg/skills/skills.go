@@ -276,6 +276,7 @@ func LoadSkills(cwd string) ([]Skill, []SkillDiagnostic) {
 
 // FormatSkillsForPrompt generates an XML block listing available skills for the system prompt.
 // Skills with DisableModelInvocation=true are excluded.
+// When skills are present, includes instructions for proactive skill invocation.
 func FormatSkillsForPrompt(skills []Skill) string {
 	var visible []Skill
 	for _, s := range skills {
@@ -290,6 +291,12 @@ func FormatSkillsForPrompt(skills []Skill) string {
 
 	var b strings.Builder
 	b.WriteString("\n\n<skills>\n")
+	b.WriteString("<instructions>\n")
+	b.WriteString("Before responding to the user, check if any skill below matches the task.\n")
+	b.WriteString("Each skill's description indicates when it should be used.\n")
+	b.WriteString("If a skill applies, call the use_skill tool to load it BEFORE taking any other action or responding.\n")
+	b.WriteString("Then follow the loaded skill's instructions.\n")
+	b.WriteString("</instructions>\n")
 	for _, s := range visible {
 		b.WriteString(fmt.Sprintf("  <skill name=%q description=%q />\n",
 			util.XmlEscape(s.Name), util.XmlEscape(s.Description)))

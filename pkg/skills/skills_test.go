@@ -390,6 +390,12 @@ func TestFormatSkillsForPrompt(t *testing.T) {
 		if !strings.Contains(result, "<skills>") {
 			t.Error("expected <skills> tag")
 		}
+		if !strings.Contains(result, "<instructions>") {
+			t.Error("expected <instructions> block")
+		}
+		if !strings.Contains(result, "use_skill") {
+			t.Error("expected use_skill instruction")
+		}
 		if !strings.Contains(result, `name="greet"`) {
 			t.Error("expected skill name in output")
 		}
