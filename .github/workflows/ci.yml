@@ -18,17 +18,8 @@ jobs:
         with:
           go-version: stable
 
-      - name: Check formatting
-        run: |
-          UNFORMATTED=$(find . -name '*.go' -not -path './docs/*' -not -path './vendor/*' | xargs gofmt -l)
-          if [ -n "$UNFORMATTED" ]; then
-            echo "Code is not formatted. Run 'gofmt -w .'"
-            echo "$UNFORMATTED" | xargs gofmt -d
-            exit 1
-          fi
-
-      - name: Run go vet
-        run: go vet ./...
+      - name: Lint
+        run: make lint
 
   test:
     name: Test (Go ${{ matrix.go }})
@@ -44,20 +35,8 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Run tests
-        run: go test -v -coverprofile=coverage.out ./pkg/...
-
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1
-
-      - name: Check coverage threshold
-        run: |
-          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')
-          echo "Total coverage: ${COVERAGE}%"
-          if [ "$(echo "$COVERAGE < 80" | bc)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below 80% threshold"
-            exit 1
-          fi
+      - name: Test with coverage
+        run: make test-cover
 
   race:
     name: Race Detection (linux/amd64)
@@ -70,8 +49,8 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run tests with race detector
-        run: go test -race -v ./...
+      - name: Test with race detector
+        run: make test-race
 
   build:
     name: Build
@@ -96,9 +75,4 @@ jobs:
           go-version: stable
 
       - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          go build -o pigo-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/pigo
-          ls -lh pigo-*
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} make build

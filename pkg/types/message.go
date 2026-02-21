@@ -38,7 +38,7 @@ type ChatOption func(*ChatConfig)
 
 // ChatConfig holds optional settings for a Chat call.
 type ChatConfig struct {
-	JSONMode   bool // Request JSON object response format
+	JSONMode   bool              // Request JSON object response format
 	JSONSchema *JSONSchemaConfig // Request JSON schema response format (takes precedence over JSONMode)
 }
 

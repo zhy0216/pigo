@@ -3,7 +3,7 @@ MODULE  = $(shell go list -m)
 VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -s -w -X main.Version=$(VERSION)
 
-.PHONY: build debug run clean test test-race test-cover lint fmt vet prof-mem help
+.PHONY: build debug run clean test test-race test-cover lint fmt format vet prof-mem help
 
 ## Build & Run
 
@@ -39,6 +39,9 @@ lint: fmt vet ## Run all linters (fmt + vet)
 
 fmt: ## Check formatting
 	@test -z "$$(gofmt -l cmd/ pkg/)" || (gofmt -d cmd/ pkg/ && exit 1)
+
+format: ## Auto-format code
+	gofmt -w cmd/ pkg/
 
 vet: ## Run go vet
 	go vet ./cmd/... ./pkg/...
