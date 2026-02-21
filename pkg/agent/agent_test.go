@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -369,6 +371,7 @@ func TestAgentProcessInputWithToolCalls(t *testing.T) {
 	agent := NewAgent(cfg)
 	output := &bytes.Buffer{}
 	agent.output = output
+	agent.visibleSkills = nil // disable pre-flight matching for this test
 
 	err := agent.ProcessInput(context.Background(), "Run echo hello")
 	if err != nil {
@@ -456,6 +459,7 @@ func TestSequentialToolExecution(t *testing.T) {
 	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
 	agent := NewAgent(cfg)
 	agent.output = &bytes.Buffer{}
+	agent.visibleSkills = nil // disable pre-flight matching for this test
 	agent.registry.Register(toolA)
 	agent.registry.Register(toolB)
 	agent.registry.Register(toolC)
@@ -737,5 +741,82 @@ func TestHandleCommandEvents(t *testing.T) {
 	e := agent.Events()
 	if e == nil {
 		t.Error("expected non-nil EventEmitter")
+	}
+}
+
+func TestProcessInputPreflightSkillMatching(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		callCount++
+
+		// First call is the pre-flight skill matching (non-streaming)
+		if callCount == 1 {
+			if bytes.Contains(body, []byte(`"stream":true`)) || bytes.Contains(body, []byte(`"stream": true`)) {
+				t.Error("expected non-streaming request for skill matching")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id": "chatcmpl-match", "object": "chat.completion",
+				"created": 1677652288, "model": "gpt-4",
+				"choices": []map[string]interface{}{
+					{
+						"index": 0,
+						"message": map[string]interface{}{
+							"role":    "assistant",
+							"content": `["test-skill"]`,
+						},
+						"finish_reason": "stop",
+					},
+				},
+			})
+			return
+		}
+
+		// Second call is the main agent loop (streaming)
+		// Go's json.Marshal escapes < as \u003c, so check for both forms
+		if !bytes.Contains(body, []byte("<skill name=")) && !bytes.Contains(body, []byte(`\u003cskill name=`)) {
+			t.Error("expected skill content to be injected into messages")
+		}
+
+		response := map[string]interface{}{
+			"id": "chatcmpl-main", "object": "chat.completion",
+			"created": 1677652288, "model": "gpt-4",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "I loaded the skill!",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		mockRespond(w, r, response)
+	}))
+	defer server.Close()
+
+	// Create a temporary skill file
+	dir := t.TempDir()
+	skillFile := filepath.Join(dir, "SKILL.md")
+	os.WriteFile(skillFile, []byte("---\nname: test-skill\ndescription: Use for testing\n---\n# Test Skill\n\nDo the test thing."), 0644)
+
+	cfg := &config.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-4"}
+	agent := NewAgent(cfg)
+	agent.output = &bytes.Buffer{}
+	agent.visibleSkills = []skills.Skill{
+		{Name: "test-skill", Description: "Use for testing", FilePath: skillFile},
+	}
+
+	err := agent.ProcessInput(context.Background(), "run the test thing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if callCount < 2 {
+		t.Errorf("expected at least 2 API calls (match + main), got %d", callCount)
 	}
 }

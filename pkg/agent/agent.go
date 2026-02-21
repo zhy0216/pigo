@@ -21,14 +21,15 @@ import (
 
 // Agent represents the pigo application.
 type Agent struct {
-	client   *llm.Client
-	registry *tools.ToolRegistry
-	messages []types.Message
-	output   io.Writer
-	Skills   []skills.Skill
-	events   *types.EventEmitter
-	hookMgr  *hooks.HookManager
-	usage    types.TokenUsage // accumulated session usage
+	client        *llm.Client
+	registry      *tools.ToolRegistry
+	messages      []types.Message
+	output        io.Writer
+	Skills        []skills.Skill
+	visibleSkills []skills.Skill // skills eligible for pre-flight matching
+	events        *types.EventEmitter
+	hookMgr       *hooks.HookManager
+	usage         types.TokenUsage // accumulated session usage
 }
 
 // NewAgent creates a new Agent instance.
@@ -65,6 +66,13 @@ func NewAgent(cfg *config.Config) *Agent {
 
 	registry.Register(tools.NewUseSkillTool(loadedSkills))
 
+	var visibleSkills []skills.Skill
+	for _, s := range loadedSkills {
+		if !s.DisableModelInvocation {
+			visibleSkills = append(visibleSkills, s)
+		}
+	}
+
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
 		systemPrompt = `You are a helpful AI coding assistant. You have access to tools for reading, writing, and editing files, as well as executing bash commands.
@@ -89,13 +97,14 @@ When helping with coding tasks:
 	hookMgr := hooks.NewHookManager(cfg.Plugins)
 
 	agent := &Agent{
-		client:   client,
-		registry: registry,
-		messages: messages,
-		output:   os.Stdout,
-		Skills:   loadedSkills,
-		events:   events,
-		hookMgr:  hookMgr,
+		client:        client,
+		registry:      registry,
+		messages:      messages,
+		output:        os.Stdout,
+		Skills:        loadedSkills,
+		visibleSkills: visibleSkills,
+		events:        events,
+		hookMgr:       hookMgr,
 	}
 
 	events.Subscribe(agent.defaultOutputHandler)
@@ -207,6 +216,28 @@ func (a *Agent) ProcessInput(ctx context.Context, input string) error {
 		Role:    "user",
 		Content: input,
 	})
+
+	// Pre-flight skill matching
+	if len(a.visibleSkills) > 0 {
+		matched := skills.MatchSkills(ctx, a.client, input, a.visibleSkills)
+		for _, name := range matched {
+			for _, s := range a.visibleSkills {
+				if s.Name == name {
+					content, err := skills.LoadSkillContent(s)
+					if err != nil {
+						fmt.Fprintf(a.output, "%s[skill match warning: %v]%s\n", types.ColorYellow, err, types.ColorReset)
+						continue
+					}
+					a.messages = append(a.messages, types.Message{
+						Role:    "system",
+						Content: content,
+					})
+					fmt.Fprintf(a.output, "%s[skill: %s]%s\n", types.ColorGray, name, types.ColorReset)
+					break
+				}
+			}
+		}
+	}
 
 	a.compactMessages(ctx)
 
