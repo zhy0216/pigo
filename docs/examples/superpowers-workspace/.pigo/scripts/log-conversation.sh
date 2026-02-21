@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-LOG_DIR=".pigo/logs"
+LOG_DIR="$HOME/.pigo/logs"
 LOG_FILE="${LOG_DIR}/conversation.jsonl"
 
 mkdir -p "${LOG_DIR}"
