@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -16,6 +17,8 @@ func clearEnv(t *testing.T) {
 		"PIGO_MODEL",
 		"OPENAI_API_TYPE",
 		"PIGO_HOME",
+		"PIGO_PROVIDER",
+		"ANTHROPIC_API_KEY",
 	} {
 		t.Setenv(key, "")
 	}
@@ -425,6 +428,113 @@ func TestLoadCreatesWorkspace(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 		t.Errorf("expected config.json to exist after Load(): %v", err)
+	}
+}
+
+func TestLoadAnthropicProvider(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	writeEmptyConfig(t, dir)
+
+	// Only ANTHROPIC_API_KEY set, no OPENAI_API_KEY
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test-123")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Provider != "anthropic" {
+		t.Errorf("Provider = %q, want %q", cfg.Provider, "anthropic")
+	}
+	if cfg.APIKey != "sk-ant-test-123" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "sk-ant-test-123")
+	}
+	if cfg.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("Model = %q, want %q", cfg.Model, "claude-sonnet-4-20250514")
+	}
+}
+
+func TestLoadAnthropicProviderExplicit(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+
+	configJSON := `{"provider": "anthropic", "api_key": "sk-ant-file"}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Provider != "anthropic" {
+		t.Errorf("Provider = %q, want %q", cfg.Provider, "anthropic")
+	}
+	if cfg.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("Model = %q, want %q", cfg.Model, "claude-sonnet-4-20250514")
+	}
+}
+
+func TestLoadAnthropicMissingKey(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+
+	configJSON := `{"provider": "anthropic"}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing Anthropic API key")
+	}
+	if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+		t.Errorf("expected error to mention ANTHROPIC_API_KEY, got: %v", err)
+	}
+}
+
+func TestLoadMalformedPluginsFile(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	configJSON := `{"plugins": ["test"]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Write invalid JSON plugins file
+	if err := os.WriteFile(filepath.Join(dir, "plugins.json"), []byte("{bad json"), 0644); err != nil {
+		t.Fatalf("failed to write plugins.json: %v", err)
+	}
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for malformed plugins.json")
+	}
+}
+
+func TestLoadWithSystemPrompt(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Setenv("PIGO_HOME", dir)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	configJSON := `{"system_prompt": "You are a helpful coding assistant."}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SystemPrompt != "You are a helpful coding assistant." {
+		t.Errorf("SystemPrompt = %q, want %q", cfg.SystemPrompt, "You are a helpful coding assistant.")
 	}
 }
 

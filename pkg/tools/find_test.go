@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,6 +249,257 @@ func TestFindTool_FormatResultsEmpty(t *testing.T) {
 
 	if !strings.Contains(result.ForLLM, "No files found") {
 		t.Errorf("expected 'No files found', got: %s", result.ForLLM)
+	}
+}
+
+// mockExecOps is a mock for ExecOps used to test fd-related paths.
+type mockExecOps struct {
+	lookPathFn func(file string) (string, error)
+	runFn      func(ctx context.Context, name string, args []string, env []string) (string, string, int, error)
+}
+
+func (m *mockExecOps) LookPath(file string) (string, error) {
+	return m.lookPathFn(file)
+}
+
+func (m *mockExecOps) Run(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+	return m.runFn(ctx, name, args, env)
+}
+
+func TestFindTool_FindFdBinary_Fdfind(t *testing.T) {
+	// fd not found, fdfind found
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			if file == "fdfind" {
+				return "/usr/bin/fdfind", nil
+			}
+			return "", fmt.Errorf("not found: %s", file)
+		},
+	}
+	tool := NewFindTool("", &ops.RealFileOps{}, mock)
+	path, err := tool.findFdBinary()
+	if err != nil {
+		t.Fatalf("expected fdfind to be found, got error: %v", err)
+	}
+	if path != "/usr/bin/fdfind" {
+		t.Errorf("expected /usr/bin/fdfind, got %q", path)
+	}
+}
+
+func TestFindTool_FindFdBinary_NeitherFound(t *testing.T) {
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "", fmt.Errorf("not found: %s", file)
+		},
+	}
+	tool := NewFindTool("", &ops.RealFileOps{}, mock)
+	_, err := tool.findFdBinary()
+	if err == nil {
+		t.Error("expected error when neither fd nor fdfind is found")
+	}
+}
+
+func TestFindTool_ExecuteWithFd_Success(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			if file == "fd" {
+				return "/usr/bin/fd", nil
+			}
+			return "", fmt.Errorf("not found")
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return dir + "/main.go\n" + dir + "/util.go\n", "", 0, nil
+		},
+	}
+	// Create actual files so Stat works
+	createTestFile(t, dir, "main.go", "package main")
+	createTestFile(t, dir, "util.go", "package main")
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "main.go") {
+		t.Error("expected main.go in results")
+	}
+	if !strings.Contains(result.ForLLM, "util.go") {
+		t.Error("expected util.go in results")
+	}
+}
+
+func TestFindTool_ExecuteWithFd_NoResults(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return "", "", 1, nil // exit code 1 = no results
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.xyz",
+		"path":    dir,
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "No files found") {
+		t.Errorf("expected 'No files found', got: %s", result.ForLLM)
+	}
+}
+
+func TestFindTool_ExecuteWithFd_ErrorWithStderr(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return "", "permission denied", 2, nil
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+	})
+	if !result.IsError {
+		t.Error("expected error for exit code > 1")
+	}
+	if !strings.Contains(result.ForLLM, "permission denied") {
+		t.Errorf("expected stderr in error, got: %s", result.ForLLM)
+	}
+}
+
+func TestFindTool_ExecuteWithFd_ErrorWithoutStderr(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return "", "", 2, nil
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+	})
+	if !result.IsError {
+		t.Error("expected error for exit code > 1")
+	}
+	if !strings.Contains(result.ForLLM, "exit code 2") {
+		t.Errorf("expected exit code in error, got: %s", result.ForLLM)
+	}
+}
+
+func TestFindTool_ExecuteWithFd_EmptyStdout(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return "", "", 0, nil // exit 0 but empty output
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "No files found") {
+		t.Errorf("expected 'No files found', got: %s", result.ForLLM)
+	}
+}
+
+func TestFindTool_ExecuteWithFd_RunError(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			return "", "", -1, fmt.Errorf("context cancelled")
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+	})
+	if !result.IsError {
+		t.Error("expected error for run failure")
+	}
+	if !strings.Contains(result.ForLLM, "context cancelled") {
+		t.Errorf("expected run error in result, got: %s", result.ForLLM)
+	}
+}
+
+func TestFindTool_ExecuteWithFd_TypeFilters(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	var capturedArgs []string
+	mock := &mockExecOps{
+		lookPathFn: func(file string) (string, error) {
+			return "/usr/bin/fd", nil
+		},
+		runFn: func(ctx context.Context, name string, args []string, env []string) (string, string, int, error) {
+			capturedArgs = args
+			return "", "", 1, nil
+		},
+	}
+
+	tool := NewFindTool(dir, &ops.RealFileOps{}, mock)
+
+	// Test file filter
+	tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*.go",
+		"path":    dir,
+		"type":    "file",
+	})
+	found := false
+	for i, arg := range capturedArgs {
+		if arg == "--type" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "f" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected --type f in args for file filter, got: %v", capturedArgs)
+	}
+
+	// Test directory filter
+	tool.Execute(context.Background(), map[string]interface{}{
+		"pattern": "*",
+		"path":    dir,
+		"type":    "directory",
+	})
+	found = false
+	for i, arg := range capturedArgs {
+		if arg == "--type" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "d" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected --type d in args for directory filter, got: %v", capturedArgs)
 	}
 }
 

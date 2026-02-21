@@ -27,6 +27,17 @@ func TestUseSkillTool_Name(t *testing.T) {
 	}
 }
 
+func TestUseSkillTool_Description(t *testing.T) {
+	tool := NewUseSkillTool(nil)
+	desc := tool.Description()
+	if desc == "" {
+		t.Error("expected non-empty description")
+	}
+	if !strings.Contains(desc, "skill") {
+		t.Errorf("expected description to mention 'skill', got %q", desc)
+	}
+}
+
 func TestUseSkillTool_Parameters(t *testing.T) {
 	tool := NewUseSkillTool(nil)
 	params := tool.Parameters()
