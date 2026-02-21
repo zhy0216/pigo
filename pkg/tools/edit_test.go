@@ -154,4 +154,146 @@ func TestEditTool(t *testing.T) {
 			t.Errorf("expected boundary error, got: %s", result.ForLLM)
 		}
 	})
+
+	t.Run("line range replacement", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr1.txt")
+		os.WriteFile(testFile, []byte("line1\nline2\nline3\nline4\nline5"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(2),
+			"end_line":   float64(3),
+			"new_string": "replaced2\nreplaced3",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, _ := os.ReadFile(testFile)
+		expected := "line1\nreplaced2\nreplaced3\nline4\nline5"
+		if string(content) != expected {
+			t.Errorf("expected %q, got %q", expected, string(content))
+		}
+	})
+
+	t.Run("line range replace first line", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr2.txt")
+		os.WriteFile(testFile, []byte("line1\nline2\nline3"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(1),
+			"end_line":   float64(1),
+			"new_string": "newline1",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, _ := os.ReadFile(testFile)
+		expected := "newline1\nline2\nline3"
+		if string(content) != expected {
+			t.Errorf("expected %q, got %q", expected, string(content))
+		}
+	})
+
+	t.Run("line range replace last line", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr3.txt")
+		os.WriteFile(testFile, []byte("line1\nline2\nline3"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(3),
+			"end_line":   float64(3),
+			"new_string": "newline3",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, _ := os.ReadFile(testFile)
+		expected := "line1\nline2\nnewline3"
+		if string(content) != expected {
+			t.Errorf("expected %q, got %q", expected, string(content))
+		}
+	})
+
+	t.Run("line range delete lines (empty new_string)", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr4.txt")
+		os.WriteFile(testFile, []byte("line1\nline2\nline3\nline4"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(2),
+			"end_line":   float64(3),
+			"new_string": "",
+		})
+		if result.IsError {
+			t.Errorf("unexpected error: %s", result.ForLLM)
+		}
+
+		content, _ := os.ReadFile(testFile)
+		expected := "line1\nline4"
+		if string(content) != expected {
+			t.Errorf("expected %q, got %q", expected, string(content))
+		}
+	})
+
+	t.Run("line range invalid start", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr5.txt")
+		os.WriteFile(testFile, []byte("line1\nline2"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(0),
+			"end_line":   float64(1),
+			"new_string": "x",
+		})
+		if !result.IsError {
+			t.Error("expected error for start_line < 1")
+		}
+	})
+
+	t.Run("line range end before start", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr6.txt")
+		os.WriteFile(testFile, []byte("line1\nline2"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(2),
+			"end_line":   float64(1),
+			"new_string": "x",
+		})
+		if !result.IsError {
+			t.Error("expected error for end_line < start_line")
+		}
+	})
+
+	t.Run("line range exceeds file length", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr7.txt")
+		os.WriteFile(testFile, []byte("line1\nline2"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"start_line": float64(1),
+			"end_line":   float64(5),
+			"new_string": "x",
+		})
+		if !result.IsError {
+			t.Error("expected error for end_line exceeding file length")
+		}
+	})
+
+	t.Run("missing both old_string and line range", func(t *testing.T) {
+		testFile := filepath.Join(resolvedDir, "edit_lr8.txt")
+		os.WriteFile(testFile, []byte("line1"), 0644)
+
+		result := tool.Execute(context.Background(), map[string]interface{}{
+			"path":       testFile,
+			"new_string": "x",
+		})
+		if !result.IsError {
+			t.Error("expected error when neither old_string nor line range is provided")
+		}
+	})
 }
