@@ -82,5 +82,7 @@ func (t *UseSkillTool) Execute(ctx context.Context, args map[string]interface{})
 	b.WriteString(body)
 	b.WriteString("\n</skill>")
 
-	return types.NewToolResult(b.String())
+	result := types.NewToolResult(b.String())
+	result.ForUser = fmt.Sprintf("[skill: %s]", name)
+	return result
 }
