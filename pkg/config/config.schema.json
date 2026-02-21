@@ -10,7 +10,7 @@
     },
     "api_key": {
       "type": "string",
-      "description": "OpenAI API key. Can also be set via OPENAI_API_KEY env var."
+      "description": "API key. Can also be set via OPENAI_API_KEY or ANTHROPIC_API_KEY env var."
     },
     "base_url": {
       "type": "string",
@@ -28,6 +28,12 @@
       "enum": ["chat", "responses"],
       "description": "OpenAI API mode. Defaults to chat.",
       "default": "chat"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["openai", "anthropic"],
+      "description": "LLM provider. Auto-detected from API key env vars if not set.",
+      "default": "openai"
     },
     "plugins": {
       "type": "array",

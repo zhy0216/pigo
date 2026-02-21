@@ -21,7 +21,7 @@ import (
 
 // Agent represents the pigo application.
 type Agent struct {
-	client        *llm.Client
+	client        llm.Provider
 	registry      *tools.ToolRegistry
 	messages      []types.Message
 	output        io.Writer
@@ -34,7 +34,13 @@ type Agent struct {
 
 // NewAgent creates a new Agent instance.
 func NewAgent(cfg *config.Config) *Agent {
-	client := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
+	var provider llm.Provider
+	switch cfg.Provider {
+	case "anthropic":
+		provider = llm.NewAnthropicProvider(cfg.APIKey, cfg.BaseURL, cfg.Model)
+	default:
+		provider = llm.NewOpenAIProvider(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.APIType)
+	}
 	registry := tools.NewToolRegistry()
 
 	cwd, err := os.Getwd()
@@ -101,7 +107,7 @@ When helping with coding tasks:
 	hookMgr := hooks.NewHookManager(cfg.Plugins)
 
 	agent := &Agent{
-		client:        client,
+		client:        provider,
 		registry:      registry,
 		messages:      messages,
 		output:        os.Stdout,

@@ -17,15 +17,15 @@ import (
 	"github.com/zhy0216/pigo/pkg/types"
 )
 
-// Client wraps the OpenAI client for chat completions with tools.
-type Client struct {
-	client  openai.Client
+// OpenAIProvider wraps the OpenAI client for chat completions with tools.
+type OpenAIProvider struct {
+	client  *openai.Client
 	model   string
 	apiType string // "chat" or "responses"
 }
 
-// NewClient creates a new Client with the given configuration.
-func NewClient(apiKey, baseURL, model, apiType string) *Client {
+// NewOpenAIProvider creates a new OpenAIProvider with the given configuration.
+func NewOpenAIProvider(apiKey, baseURL, model, apiType string) *OpenAIProvider {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(3),
@@ -34,15 +34,16 @@ func NewClient(apiKey, baseURL, model, apiType string) *Client {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 
-	return &Client{
-		client:  openai.NewClient(opts...),
+	client := openai.NewClient(opts...)
+	return &OpenAIProvider{
+		client:  &client,
 		model:   model,
 		apiType: apiType,
 	}
 }
 
 // Chat sends a chat request, dispatching to the appropriate API based on apiType.
-func (c *Client) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error) {
 	cfg := types.ApplyChatOptions(opts)
 	if c.apiType == "responses" {
 		return c.chatViaResponses(ctx, messages, toolDefs, cfg)
@@ -52,7 +53,7 @@ func (c *Client) Chat(ctx context.Context, messages []types.Message, toolDefs []
 
 // ChatStream sends a streaming chat request. Text deltas are written to w as they
 // arrive. The complete ChatResponse (with any tool calls) is returned when done.
-func (c *Client) ChatStream(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) ChatStream(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
 	if c.apiType == "responses" {
 		return c.chatStreamViaResponses(ctx, messages, toolDefs, w)
 	}
@@ -60,7 +61,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []types.Message, toolD
 }
 
 // chatViaCompletions sends a chat completion request using the Chat Completions API.
-func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) chatViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
 		switch msg.Role {
@@ -176,7 +177,7 @@ func (c *Client) chatViaCompletions(ctx context.Context, messages []types.Messag
 }
 
 // chatViaResponses sends a chat request using the Responses API.
-func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) chatViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (*types.ChatResponse, error) {
 	var instructions string
 	var inputMessages []types.Message
 	for _, msg := range messages {
@@ -325,7 +326,7 @@ func (c *Client) chatViaResponses(ctx context.Context, messages []types.Message,
 }
 
 // chatStreamViaCompletions streams a chat completion using the accumulator.
-func (c *Client) chatStreamViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) chatStreamViaCompletions(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
 		switch msg.Role {
@@ -436,7 +437,7 @@ func (c *Client) chatStreamViaCompletions(ctx context.Context, messages []types.
 }
 
 // chatStreamViaResponses streams a response using the Responses API.
-func (c *Client) chatStreamViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
+func (c *OpenAIProvider) chatStreamViaResponses(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
 	var instructions string
 	var inputMessages []types.Message
 	for _, msg := range messages {
@@ -598,12 +599,12 @@ func (c *Client) chatStreamViaResponses(ctx context.Context, messages []types.Me
 }
 
 // GetModel returns the model name.
-func (c *Client) GetModel() string {
+func (c *OpenAIProvider) GetModel() string {
 	return c.model
 }
 
 // SetModel changes the model used for subsequent requests.
-func (c *Client) SetModel(model string) {
+func (c *OpenAIProvider) SetModel(model string) {
 	c.model = model
 }
 

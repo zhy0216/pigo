@@ -19,6 +19,7 @@ type Config struct {
 	BaseURL      string
 	Model        string
 	APIType      string // "chat" or "responses"
+	Provider     string // "openai" or "anthropic"
 	SystemPrompt string
 	Plugins      []hooks.PluginConfig
 }
@@ -29,6 +30,7 @@ type fileConfig struct {
 	BaseURL      string   `json:"base_url,omitempty"`
 	Model        string   `json:"model,omitempty"`
 	APIType      string   `json:"api_type,omitempty"`
+	Provider     string   `json:"provider,omitempty"`
 	SystemPrompt string   `json:"system_prompt,omitempty"`
 	Plugins      []string `json:"plugins,omitempty"`
 }
@@ -72,16 +74,41 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		APIKey:       resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY")),
+		APIKey:       resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY"), os.Getenv("ANTHROPIC_API_KEY")),
 		BaseURL:      resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
-		Model:        resolve(fc.Model, os.Getenv("PIGO_MODEL"), "gpt-4o"),
+		Model:        resolve(fc.Model, os.Getenv("PIGO_MODEL"), ""),
 		APIType:      resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
+		Provider:     resolve(fc.Provider, os.Getenv("PIGO_PROVIDER"), ""),
 		SystemPrompt: fc.SystemPrompt,
 		Plugins:      plugins,
 	}
 
+	// Auto-detect provider from API key env vars if not explicitly set
+	if cfg.Provider == "" {
+		if os.Getenv("ANTHROPIC_API_KEY") != "" && os.Getenv("OPENAI_API_KEY") == "" {
+			cfg.Provider = "anthropic"
+		} else {
+			cfg.Provider = "openai"
+		}
+	}
+
+	// Set provider-appropriate default model
+	if cfg.Model == "" {
+		switch cfg.Provider {
+		case "anthropic":
+			cfg.Model = "claude-sonnet-4-20250514"
+		default:
+			cfg.Model = "gpt-4o"
+		}
+	}
+
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY is required (set via env var or config file)")
+		switch cfg.Provider {
+		case "anthropic":
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY is required (set via env var or config file)")
+		default:
+			return nil, fmt.Errorf("OPENAI_API_KEY is required (set via env var or config file)")
+		}
 	}
 
 	return cfg, nil
