@@ -84,6 +84,10 @@ When helping with coding tasks:
 4. Be concise in your explanations`
 	}
 
+	if cwd != "" {
+		systemPrompt += fmt.Sprintf("\n\nCurrent working directory: %s", cwd)
+	}
+
 	systemPrompt += skills.FormatSkillsForPrompt(loadedSkills)
 
 	messages := []types.Message{
