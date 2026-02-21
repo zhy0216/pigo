@@ -42,6 +42,7 @@ type HookContext struct {
 	Event            string
 	WorkDir          string
 	Model            string
+	SystemPrompt     string
 	UserMessage      string
 	AssistantMessage string
 	ToolName         string
@@ -88,6 +89,7 @@ func buildEnv(hctx *HookContext) []string {
 		"PIGO_EVENT=" + hctx.Event,
 		"PIGO_WORK_DIR=" + hctx.WorkDir,
 		"PIGO_MODEL=" + hctx.Model,
+		"PIGO_SYSTEM_PROMPT=" + hctx.SystemPrompt,
 		"PIGO_USER_MESSAGE=" + hctx.UserMessage,
 		"PIGO_ASSISTANT_MESSAGE=" + hctx.AssistantMessage,
 	}

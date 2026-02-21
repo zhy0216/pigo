@@ -70,6 +70,7 @@ func envToMap(env []string) map[string]string {
 func TestBuildEnv_common(t *testing.T) {
 	hctx := &HookContext{
 		Event: "agent_start", WorkDir: "/tmp/test", Model: "gpt-4o",
+		SystemPrompt: "You are a helpful assistant.",
 		UserMessage: "hello", AssistantMessage: "hi there",
 	}
 	env := buildEnv(hctx)
@@ -82,6 +83,9 @@ func TestBuildEnv_common(t *testing.T) {
 	}
 	if m["PIGO_MODEL"] != "gpt-4o" {
 		t.Errorf("PIGO_MODEL = %q", m["PIGO_MODEL"])
+	}
+	if m["PIGO_SYSTEM_PROMPT"] != "You are a helpful assistant." {
+		t.Errorf("PIGO_SYSTEM_PROMPT = %q", m["PIGO_SYSTEM_PROMPT"])
 	}
 	if m["PIGO_USER_MESSAGE"] != "hello" {
 		t.Errorf("PIGO_USER_MESSAGE = %q", m["PIGO_USER_MESSAGE"])

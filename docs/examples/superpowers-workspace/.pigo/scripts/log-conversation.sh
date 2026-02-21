@@ -27,6 +27,12 @@ json_escape() {
 event="${PIGO_EVENT:-unknown}"
 
 case "${event}" in
+  agent_start)
+    user_msg=$(json_escape "${PIGO_USER_MESSAGE:-}")
+    sys_prompt=$(json_escape "${PIGO_SYSTEM_PROMPT:-}")
+    printf '{"ts":"%s","event":"%s","user_message":"%s","system_prompt":"%s"}\n' \
+      "$timestamp" "$event" "$user_msg" "$sys_prompt" >> "${LOG_FILE}"
+    ;;
   turn_start)
     user_msg=$(json_escape "${PIGO_USER_MESSAGE:-}")
     printf '{"ts":"%s","event":"%s","user_message":"%s"}\n' \

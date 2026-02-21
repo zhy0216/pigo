@@ -2,6 +2,12 @@
   "conversation-logger": {
     "name": "conversation-logger",
     "hooks": {
+      "agent_start": [
+        {
+          "command": "$HOME/.pigo/scripts/log-conversation.sh",
+          "blocking": false
+        }
+      ],
       "turn_start": [
         {
           "command": "$HOME/.pigo/scripts/log-conversation.sh",

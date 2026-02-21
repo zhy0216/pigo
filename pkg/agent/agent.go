@@ -465,10 +465,15 @@ func (a *Agent) lastMessage(role string) string {
 // newHookContext creates a base HookContext with common fields.
 func (a *Agent) newHookContext(event string) *hooks.HookContext {
 	wd, _ := os.Getwd()
+	var systemPrompt string
+	if len(a.messages) > 0 && a.messages[0].Role == "system" {
+		systemPrompt = a.messages[0].Content
+	}
 	return &hooks.HookContext{
 		Event:            event,
 		WorkDir:          wd,
 		Model:            a.client.GetModel(),
+		SystemPrompt:     systemPrompt,
 		UserMessage:      a.lastMessage("user"),
 		AssistantMessage: a.lastMessage("assistant"),
 	}
