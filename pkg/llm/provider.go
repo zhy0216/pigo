@@ -15,6 +15,12 @@ type Provider interface {
 	SetModel(model string)
 }
 
+// Compile-time interface compliance checks.
+var (
+	_ Provider = (*OpenAIProvider)(nil)
+	_ Provider = (*AnthropicProvider)(nil)
+)
+
 // Client wraps an LLM Provider.
 type Client struct {
 	Provider

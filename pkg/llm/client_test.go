@@ -486,6 +486,48 @@ func TestIsContextOverflow(t *testing.T) {
 			t.Error("expected false for unrelated 400 error")
 		}
 	})
+
+	t.Run("anthropic context overflow", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type": "error",
+				"error": map[string]interface{}{
+					"type":    "invalid_request_error",
+					"message": "prompt is too long: 200000 tokens > 100000 maximum",
+				},
+			})
+		}))
+		defer server.Close()
+
+		p := NewAnthropicProvider("sk-ant-test", server.URL, "claude-sonnet-4-20250514")
+		_, err := p.Chat(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, nil)
+		if !IsContextOverflow(err) {
+			t.Errorf("expected true for Anthropic context overflow, got false. Error: %v", err)
+		}
+	})
+
+	t.Run("anthropic unrelated 400", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type": "error",
+				"error": map[string]interface{}{
+					"type":    "invalid_request_error",
+					"message": "model not found",
+				},
+			})
+		}))
+		defer server.Close()
+
+		p := NewAnthropicProvider("sk-ant-test", server.URL, "claude-sonnet-4-20250514")
+		_, err := p.Chat(context.Background(), []types.Message{{Role: "user", Content: "hi"}}, nil)
+		if IsContextOverflow(err) {
+			t.Error("expected false for unrelated Anthropic 400 error")
+		}
+	})
 }
 
 func TestSetModel(t *testing.T) {

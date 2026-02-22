@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -625,13 +626,23 @@ func IsContextOverflow(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr *openai.Error
-	if !errors.As(err, &apiErr) {
+
+	var statusCode int
+
+	var openaiErr *openai.Error
+	if errors.As(err, &openaiErr) {
+		statusCode = openaiErr.StatusCode
+	}
+
+	var anthropicErr *anthropic.Error
+	if errors.As(err, &anthropicErr) {
+		statusCode = anthropicErr.StatusCode
+	}
+
+	if statusCode != 400 && statusCode != 413 {
 		return false
 	}
-	if apiErr.StatusCode != 400 && apiErr.StatusCode != 413 {
-		return false
-	}
+
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "context length") ||
 		strings.Contains(msg, "context window") ||

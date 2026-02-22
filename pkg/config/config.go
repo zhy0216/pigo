@@ -75,7 +75,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		APIKey:       resolve(fc.APIKey, os.Getenv("OPENAI_API_KEY"), os.Getenv("ANTHROPIC_API_KEY")),
-		BaseURL:      resolve(fc.BaseURL, os.Getenv("OPENAI_BASE_URL"), ""),
+		BaseURL:      fc.BaseURL, // resolved below after provider detection
 		Model:        resolve(fc.Model, os.Getenv("PIGO_MODEL"), ""),
 		APIType:      resolve(fc.APIType, os.Getenv("OPENAI_API_TYPE"), "chat"),
 		Provider:     resolve(fc.Provider, os.Getenv("PIGO_PROVIDER"), ""),
@@ -89,6 +89,16 @@ func Load() (*Config, error) {
 			cfg.Provider = "anthropic"
 		} else {
 			cfg.Provider = "openai"
+		}
+	}
+
+	// Resolve BaseURL using the provider-appropriate env var
+	if cfg.BaseURL == "" {
+		switch cfg.Provider {
+		case "anthropic":
+			cfg.BaseURL = os.Getenv("ANTHROPIC_BASE_URL")
+		default:
+			cfg.BaseURL = os.Getenv("OPENAI_BASE_URL")
 		}
 	}
 

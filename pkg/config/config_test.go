@@ -14,6 +14,7 @@ func clearEnv(t *testing.T) {
 	for _, key := range []string{
 		"OPENAI_API_KEY",
 		"OPENAI_BASE_URL",
+		"ANTHROPIC_BASE_URL",
 		"PIGO_MODEL",
 		"OPENAI_API_TYPE",
 		"PIGO_HOME",
@@ -559,4 +560,81 @@ func TestResolve(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadBaseURLIsolation(t *testing.T) {
+	t.Run("anthropic provider ignores OPENAI_BASE_URL", func(t *testing.T) {
+		clearEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PIGO_HOME", dir)
+		writeEmptyConfig(t, dir)
+		t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+		t.Setenv("OPENAI_BASE_URL", "https://openai.example.com/v1")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.Provider != "anthropic" {
+			t.Fatalf("Provider = %q, want %q", cfg.Provider, "anthropic")
+		}
+		if cfg.BaseURL != "" {
+			t.Errorf("BaseURL = %q, want empty (OPENAI_BASE_URL should not leak to anthropic)", cfg.BaseURL)
+		}
+	})
+
+	t.Run("anthropic provider uses ANTHROPIC_BASE_URL", func(t *testing.T) {
+		clearEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PIGO_HOME", dir)
+		writeEmptyConfig(t, dir)
+		t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+		t.Setenv("ANTHROPIC_BASE_URL", "https://anthropic.example.com")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.BaseURL != "https://anthropic.example.com" {
+			t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "https://anthropic.example.com")
+		}
+	})
+
+	t.Run("openai provider uses OPENAI_BASE_URL", func(t *testing.T) {
+		clearEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PIGO_HOME", dir)
+		writeEmptyConfig(t, dir)
+		t.Setenv("OPENAI_API_KEY", "sk-test")
+		t.Setenv("OPENAI_BASE_URL", "https://openai.example.com/v1")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.BaseURL != "https://openai.example.com/v1" {
+			t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "https://openai.example.com/v1")
+		}
+	})
+
+	t.Run("config file base_url overrides env for any provider", func(t *testing.T) {
+		clearEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PIGO_HOME", dir)
+		t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+		t.Setenv("ANTHROPIC_BASE_URL", "https://from-env.com")
+
+		configJSON := `{"provider": "anthropic", "base_url": "https://from-file.com"}`
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(configJSON), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.BaseURL != "https://from-file.com" {
+			t.Errorf("BaseURL = %q, want %q (config file should win)", cfg.BaseURL, "https://from-file.com")
+		}
+	})
 }

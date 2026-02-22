@@ -500,7 +500,7 @@ func TestAnthropicChat_CacheControlPlacement(t *testing.T) {
 		{Role: "user", Content: "msg3"},
 	}
 
-	params, err := p.buildRequest(messages, nil)
+	params, err := p.buildRequest(messages, nil, types.ChatConfig{})
 	if err != nil {
 		t.Fatalf("buildRequest failed: %v", err)
 	}
@@ -524,7 +524,7 @@ func TestAnthropicChat_NoSystem(t *testing.T) {
 	messages := []types.Message{
 		{Role: "user", Content: "Hello"},
 	}
-	params, err := p.buildRequest(messages, nil)
+	params, err := p.buildRequest(messages, nil, types.ChatConfig{})
 	if err != nil {
 		t.Fatalf("buildRequest failed: %v", err)
 	}
@@ -539,4 +539,125 @@ func mustJSON(v interface{}) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+func TestExtractRequired(t *testing.T) {
+	t.Run("[]string from Go tool definitions", func(t *testing.T) {
+		result := extractRequired([]string{"path", "content"})
+		if len(result) != 2 || result[0] != "path" || result[1] != "content" {
+			t.Errorf("expected [path content], got %v", result)
+		}
+	})
+
+	t.Run("[]interface{} from JSON", func(t *testing.T) {
+		result := extractRequired([]interface{}{"path", "content"})
+		if len(result) != 2 || result[0] != "path" || result[1] != "content" {
+			t.Errorf("expected [path content], got %v", result)
+		}
+	})
+
+	t.Run("[]interface{} with non-string elements", func(t *testing.T) {
+		result := extractRequired([]interface{}{"path", 42, nil, "content"})
+		if len(result) != 2 || result[0] != "path" || result[1] != "content" {
+			t.Errorf("expected [path content], got %v", result)
+		}
+	})
+
+	t.Run("nil returns nil", func(t *testing.T) {
+		result := extractRequired(nil)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("unsupported type returns nil", func(t *testing.T) {
+		result := extractRequired("not a slice")
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+}
+
+func TestAnthropicBuildRequest_WithGoStringRequired(t *testing.T) {
+	// Verify that tool definitions using []string (as Go tools do) work correctly
+	p := NewAnthropicProvider("sk-ant-test", "", "claude-sonnet-4-20250514")
+	toolDefs := []map[string]interface{}{
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "read",
+				"description": "Read a file",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string"},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
+	}
+	messages := []types.Message{{Role: "user", Content: "hi"}}
+	params, err := p.buildRequest(messages, toolDefs, types.ChatConfig{})
+	if err != nil {
+		t.Fatalf("buildRequest failed: %v", err)
+	}
+	if len(params.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(params.Tools))
+	}
+	req := params.Tools[0].OfTool.InputSchema.Required
+	if len(req) != 1 || req[0] != "path" {
+		t.Errorf("expected required [path], got %v", req)
+	}
+}
+
+func TestAnthropicBuildRequest_JSONSchema(t *testing.T) {
+	p := NewAnthropicProvider("sk-ant-test", "", "claude-sonnet-4-20250514")
+	messages := []types.Message{{Role: "user", Content: "hi"}}
+
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"skills": map[string]interface{}{"type": "array"},
+		},
+	}
+	cfg := types.ApplyChatOptions([]types.ChatOption{types.WithJSONSchema("test", schema)})
+	params, err := p.buildRequest(messages, nil, cfg)
+	if err != nil {
+		t.Fatalf("buildRequest failed: %v", err)
+	}
+
+	// Should have a system block with JSON schema instruction
+	found := false
+	for _, block := range params.System {
+		if strings.Contains(block.Text, "JSON object conforming to this schema") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected system block with JSON schema instruction")
+	}
+}
+
+func TestAnthropicBuildRequest_JSONMode(t *testing.T) {
+	p := NewAnthropicProvider("sk-ant-test", "", "claude-sonnet-4-20250514")
+	messages := []types.Message{{Role: "user", Content: "hi"}}
+
+	cfg := types.ApplyChatOptions([]types.ChatOption{types.WithJSONMode()})
+	params, err := p.buildRequest(messages, nil, cfg)
+	if err != nil {
+		t.Fatalf("buildRequest failed: %v", err)
+	}
+
+	found := false
+	for _, block := range params.System {
+		if strings.Contains(block.Text, "valid JSON object") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected system block with JSON mode instruction")
+	}
 }

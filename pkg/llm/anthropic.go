@@ -44,7 +44,7 @@ func (a *AnthropicProvider) SetModel(model string) {
 	a.model = model
 }
 
-func (a *AnthropicProvider) buildRequest(messages []types.Message, toolDefs []map[string]interface{}) (anthropic.MessageNewParams, error) {
+func (a *AnthropicProvider) buildRequest(messages []types.Message, toolDefs []map[string]interface{}, cfg types.ChatConfig) (anthropic.MessageNewParams, error) {
 	var systemBlocks []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
@@ -76,6 +76,21 @@ func (a *AnthropicProvider) buildRequest(messages []types.Message, toolDefs []ma
 				},
 			})
 		}
+	}
+
+	// Anthropic doesn't have a native response_format like OpenAI.
+	// Enforce JSON output via a system prompt instruction when requested.
+	if cfg.JSONSchema != nil {
+		schemaBytes, err := json.Marshal(cfg.JSONSchema.Schema)
+		if err == nil {
+			systemBlocks = append(systemBlocks, *anthropic.NewTextBlock(
+				fmt.Sprintf("You must respond with a JSON object conforming to this schema: %s\nDo not include any text outside the JSON object.", string(schemaBytes)),
+			).OfText)
+		}
+	} else if cfg.JSONMode {
+		systemBlocks = append(systemBlocks, *anthropic.NewTextBlock(
+			"You must respond with a valid JSON object. Do not include any text outside the JSON object.",
+		).OfText)
 	}
 
 	// Add caching breakpoint to the last system prompt block if it exists
@@ -121,16 +136,7 @@ func (a *AnthropicProvider) buildRequest(messages []types.Message, toolDefs []ma
 				Description: anthropic.String(desc),
 				InputSchema: anthropic.ToolInputSchemaParam{
 					Properties: params["properties"],
-					Required: func() []string {
-						if req, ok := params["required"].([]interface{}); ok {
-							var res []string
-							for _, r := range req {
-								res = append(res, r.(string))
-							}
-							return res
-						}
-						return nil
-					}(),
+					Required:   extractRequired(params["required"]),
 				},
 			},
 		})
@@ -155,7 +161,8 @@ func (a *AnthropicProvider) buildRequest(messages []types.Message, toolDefs []ma
 
 // Chat sends a chat request.
 func (a *AnthropicProvider) Chat(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, opts ...types.ChatOption) (*types.ChatResponse, error) {
-	params, err := a.buildRequest(messages, toolDefs)
+	cfg := types.ApplyChatOptions(opts)
+	params, err := a.buildRequest(messages, toolDefs, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +205,7 @@ func (a *AnthropicProvider) Chat(ctx context.Context, messages []types.Message, 
 
 // ChatStream sends a streaming chat request.
 func (a *AnthropicProvider) ChatStream(ctx context.Context, messages []types.Message, toolDefs []map[string]interface{}, w io.Writer) (*types.ChatResponse, error) {
-	params, err := a.buildRequest(messages, toolDefs)
+	params, err := a.buildRequest(messages, toolDefs, types.ChatConfig{})
 	if err != nil {
 		return nil, err
 	}
@@ -278,4 +285,23 @@ func (a *AnthropicProvider) ChatStream(ctx context.Context, messages []types.Mes
 	}
 
 	return response, nil
+}
+
+// extractRequired safely extracts a []string from a required field value,
+// handling both []string (from Go tool definitions) and []interface{} (from JSON).
+func extractRequired(v interface{}) []string {
+	switch req := v.(type) {
+	case []string:
+		return req
+	case []interface{}:
+		var res []string
+		for _, r := range req {
+			if s, ok := r.(string); ok {
+				res = append(res, s)
+			}
+		}
+		return res
+	default:
+		return nil
+	}
 }
